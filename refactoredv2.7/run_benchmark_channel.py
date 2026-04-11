@@ -243,6 +243,7 @@ def run_channel_benchmark():
         periodic_x=True,
         periodic_y=False,
         periodic_z=False,
+        neem_isothermal_wall=False,
         
         nx=nx, ny=ny, nz=nz,
         Lx_p=0.1,              
