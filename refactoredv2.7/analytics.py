@@ -6,6 +6,9 @@ import taichi as ti
 import numpy as np
 from wall_metrics import channel_hydraulic_diameter_p, get_wall_neighbor_dirs_xy
 from nu_models import build_nu_model
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 
 @ti.data_oriented
@@ -121,7 +124,7 @@ class Analytics:
         Lx_p: ti.types.f32,
         delta_T_ref: ti.types.f32,
         T_inlet_p: ti.types.f32,
-    ) -> ti.types.f32:
+    ) -> ti.types.vector(6, ti.f32):
         # バルク温度: 質量流束重み Σ(ρ u_z T) / Σ(ρ u_z)（u_z は主流方向、ctx.rho はセル密度）
         sum_mdT, sum_md = 0.0, 0.0
         sum_q_wall_p, area = 0.0, 0.0
@@ -183,16 +186,23 @@ class Analytics:
 
         Nu_local = h_local * self.nu_l_ref_p / (k_ref + 1e-12)
 
-        cx = self.cfg.nx//2
-        T_center = ctx.temp[cx, self.cfg.ny//2, k_target]
-        T_fluid_edge = ctx.temp[cx, self.cfg.ny//2 - 10, k_target]
-        print(f"T_center: {T_center}, T_fluid_edge: {T_fluid_edge}")
-        print(f"T_bulk: {T_bulk_p}, T_wall: {T_wall_actual_p}")
-        print(f"q_wall_p: {q_wall_p}")
-        return Nu_local
+        cx = nx // 2
+        cy_mid = ny // 2
+        T_center = ctx.temp[cx, cy_mid, k_target]
+        T_fluid_edge = ctx.temp[cx, cy_mid - 10, k_target]
+        return ti.Vector(
+            [
+                Nu_local,
+                T_center,
+                T_fluid_edge,
+                T_bulk_p,
+                T_wall_actual_p,
+                q_wall_p,
+            ]
+        )
 
     def get_local_Nu(self, ctx, k_target):
-        return self._get_local_Nu_kernel(
+        pack = self._get_local_Nu_kernel(
             ctx,
             k_target,
             self.cfg.nx,
@@ -202,6 +212,16 @@ class Analytics:
             self.cfg.delta_T_ref,
             self.cfg.T_inlet_p,
         )
+        nu = float(pack[0])
+        t_center = float(pack[1])
+        t_fluid_edge = float(pack[2])
+        t_bulk = float(pack[3])
+        t_wall = float(pack[4])
+        q_wall = float(pack[5])
+        _log.info("T_center: %.6f, T_fluid_edge: %.6f", t_center, t_fluid_edge)
+        _log.info("T_bulk: %.6f, T_wall: %.6f", t_bulk, t_wall)
+        _log.info("q_wall_p: %.6e", q_wall)
+        return nu
 
     @ti.kernel
     def compute_global_hash(self, ctx: ti.template()) -> ti.types.vector(2, ti.f32):

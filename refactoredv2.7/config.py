@@ -3,6 +3,9 @@
 # ==========================================================
 import taichi as ti
 from context import FLUID_A, INLET, OUTLET, SOLID, SOLID_HEAT_SOURCE
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 # 浮動小数点型（run_simulation 内で cfg.fp_dtype に合わせて上書きされる）
 TI_FLOAT = ti.f32
@@ -85,6 +88,14 @@ class SimConfig:
             self.rot_axis_id = 1
         else:
             self.rot_axis_id = 2  # デフォルトはZ軸
+
+        log.debug(
+            "SimConfig: benchmark=%s grid=%sx%sx%s",
+            self.benchmark_name,
+            self.nx,
+            self.ny,
+            self.nz,
+        )
 
     def get_materials_dict(self):
         """設定された各IDの物性から、独立して tau_f, tau_g を計算してテーブルに登録する"""

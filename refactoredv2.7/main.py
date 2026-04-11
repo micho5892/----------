@@ -5,7 +5,6 @@ import os
 import sys
 import time
 import math
-import logging
 import shutil
 import importlib
 from datetime import datetime
@@ -13,7 +12,7 @@ import json
 import numpy as np
 from pprint import pprint, pformat
 
-
+from lbm_logger import configure_logging, get_logger
 
 
 #
@@ -44,33 +43,6 @@ def format_eta(seconds):
     if h > 0: return f"{h}h {m}m {s}s"
     elif m > 0: return f"{m}m {s}s"
     else: return f"{s}s"
-
-# ==========================================================
-# ▼ 追加: ロガーのセットアップ関数
-# ==========================================================
-def setup_logger(log_file_path):
-    logger = logging.getLogger("LBM_Sim")
-    logger.setLevel(logging.DEBUG)
-    
-    # 既存のハンドラがあればクリア
-    if logger.hasHandlers():
-        logger.handlers.clear()
-        
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    
-    # ファイルハンドラ (DEBUGレベルまで全て出力)
-    fh = logging.FileHandler(log_file_path, encoding='utf-8')
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-    
-    # コンソールハンドラ (コンソールはINFOレベル以上をスッキリ表示)
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO) 
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    
-    return logger
 
 class SteadyStateDetector:
     """流れの定常化（および周期定常化）を自動検知するクラス"""
@@ -177,8 +149,9 @@ def run_simulation(**kwargs):
     kwargs["filename"] = gif_path
     log_path = os.path.join(out_dir, f"{benchmark}_{timestamp}.log")
     
-    # ロガーの起動
-    logger = setup_logger(log_path)
+    # ロガーの起動（共通モジュール lbm_logger）
+    configure_logging(log_path)
+    logger = get_logger("simulation")
 
     cfg = SimConfig(**kwargs)
     import config as config_mod

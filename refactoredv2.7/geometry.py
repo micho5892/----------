@@ -4,6 +4,9 @@
 # ==========================================================
 import taichi as ti
 from context import FLUID_A, SOLID, INLET, OUTLET, ROTATING_WALL, SOLID_HEAT_SOURCE
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 
 @ti.data_oriented
@@ -334,6 +337,7 @@ class GeometryBuilder:
 
     def build_validation_channel(self, ctx):
         """検証用チャネル（左右の壁）を ctx の cell_id / sdf に書き込む。"""
+        log.debug("Geometry: validation_channel (%s x %s x %s)", ctx.nx, ctx.ny, ctx.nz)
         self._build_validation_channel_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
     def build_karman_cylinder(self, ctx):

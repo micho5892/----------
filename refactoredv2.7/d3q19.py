@@ -3,6 +3,9 @@
 # ==========================================================
 import taichi as ti
 import numpy as np
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 # タスク10: LBM で使う定数をここにまとめる
 C_s2 = 1.0 / 3.0
@@ -69,6 +72,8 @@ class D3Q19:
             0.0, 1.19, 1.4, 0.0, 1.2, 0.0, 1.2, 0.0, 1.2,
             1.0, 1.4, 1.0, 1.4, 1.0, 1.0, 1.0, 1.98, 1.98, 1.98
         ], dtype=np_fp))
+
+        log.debug("D3Q19 lattice initialized (fp_dtype=%s)", fp_dtype)
 
     @ti.func
     def get_feq(self, rho_val, v_val, d):

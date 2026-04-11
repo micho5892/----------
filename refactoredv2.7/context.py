@@ -3,6 +3,9 @@
 # タスク6: tau_f_table / tau_g_table で ID → 物性 を保持
 # ==========================================================
 import taichi as ti
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 # --- セルID（タグ）マップ用定数 ---
 FLUID_A = 0
@@ -73,6 +76,8 @@ class SimulationContext:
         dirs = grid.dense(ti.l, 19)
         dirs.place(self.f_old, self.f_new)
         dirs.place(self.g_old, self.g_new)
+
+        log.debug("SimulationContext: grid %s x %s x %s", nx, ny, nz)
 
     def set_materials(self, materials_dict):
         """タスク7: ID → (tau_f, tau_g) のマッピングをテーブルに反映する。"""

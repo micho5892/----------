@@ -6,6 +6,9 @@ import math
 import config
 from context import FLUID_A, INLET, OUTLET, SOLID, SOLID_HEAT_SOURCE, ROTATING_WALL
 from immersed_boundary import IBManager, create_sphere_markers
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 @ti.data_oriented
 class PhysicsModel:
@@ -170,8 +173,13 @@ class ImmersedBoundaryModel(PhysicsModel):
         self.num_points = int(surface_area_lbm / (0.8 ** 2))
         self.dA_lbm = surface_area_lbm / self.num_points # 1マーカーあたりの面積
         
-        print(f"[IBM Auto-Scale] Radius(LBM): {self.r_lbm:.2f} cells, Mass(LBM): {self.mass_lbm:.2f}, Points: {self.num_points}")
-        print(f"[IBM Auto-Scale] Gravity(LBM): {self.g_lbm}")
+        _log.info(
+            "[IBM Auto-Scale] Radius(LBM): %.2f cells, Mass(LBM): %.2f, Points: %s",
+            self.r_lbm,
+            self.mass_lbm,
+            self.num_points,
+        )
+        _log.info("[IBM Auto-Scale] Gravity(LBM): %s", self.g_lbm)
 
         # IBMマネージャーの初期化
         self.ibm = IBManager(fp_dtype, self.num_points, self.mass_lbm, self.g_lbm, self.dA_lbm)

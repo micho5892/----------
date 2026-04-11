@@ -6,6 +6,9 @@ Nu 定義を benchmark ごとに差し替えるための軽量モデル定義。
 from dataclasses import dataclass
 
 from wall_metrics import benchmark_cylinder_diameter_p, channel_hydraulic_diameter_p
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -23,6 +26,7 @@ def build_nu_model(cfg):
     - cylinder(仮):    Nu = h * D / k_bulk （D は現状 fallback で D_h）
     """
     benchmark_name = getattr(cfg, "benchmark_name", "unknown")
+    log.debug("build_nu_model: benchmark=%s", benchmark_name)
 
     if benchmark_name == "parallel_plates":
         d_h = float(channel_hydraulic_diameter_p(cfg.nx, cfg.ny, cfg.Lx_p, wall_thickness_cells=10))

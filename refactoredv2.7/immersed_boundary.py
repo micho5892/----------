@@ -1,6 +1,10 @@
 import taichi as ti
 import numpy as np
 import math
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
+
 
 @ti.data_oriented
 class IBManager:
@@ -18,6 +22,7 @@ class IBManager:
         
         self.center = ti.Vector.field(3, dtype=fp_dtype, shape=())
         self.center_vel = ti.Vector.field(3, dtype=fp_dtype, shape=())
+        _log.debug("IBManager: num_points=%s", num_points)
 
     @ti.func
     def peskin_delta(self, r):

@@ -2,6 +2,9 @@
 wall_metrics.py
 幾何依存の壁面評価パラメータを analytics から切り離すためのヘルパー。
 """
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 
 def get_wall_neighbor_dirs_xy():
@@ -28,7 +31,9 @@ def channel_hydraulic_diameter_p(nx, ny, lx_p, wall_thickness_cells=10):
     平行平板 benchmark 用の代表長さ D_h を返す（D_h = 2H）。
     """
     h_p = channel_fluid_height_p(nx, ny, lx_p, wall_thickness_cells=wall_thickness_cells)
-    return 2.0 * h_p
+    d_h = 2.0 * h_p
+    log.debug("channel_hydraulic_diameter_p: D_h=%s (nx=%s ny=%s)", d_h, nx, ny)
+    return d_h
 
 
 def benchmark_cylinder_diameter_p(lx_p):

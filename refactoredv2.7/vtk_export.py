@@ -6,6 +6,9 @@
 PyVista を使用（pip install pyvista）。
 """
 import numpy as np
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 try:
     import pyvista as pv
@@ -40,4 +43,5 @@ def export_step(ctx, step, filepath_template, dx=1.0):
     grid.point_data["velocity"] = v_np.reshape(-1, 3, order="F")
 
     grid.save(path)
+    log.debug("VTI saved: %s", path)
     return path

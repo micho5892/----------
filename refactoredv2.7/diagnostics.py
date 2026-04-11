@@ -21,12 +21,15 @@
 """
 import numpy as np
 from context import FLUID_A, INLET, OUTLET, SOLID, SOLID_HEAT_SOURCE
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 
 def log_field_diagnostics(ctx, step, log_distributions=False):
     """
     ctx の流体セル（FLUID_A, INLET, OUTLET）のみをマスクし、
-    rho, temp, |v| および必要なら f_old, g_old の統計を print する。
+    rho, temp, |v| および必要なら f_old, g_old の統計を共通ロガーへ出力する。
     log_distributions=True のとき f_old, g_old の min/max も出す（重い）。
     """
     cell_id = ctx.cell_id.to_numpy()
@@ -76,7 +79,7 @@ def log_field_diagnostics(ctx, step, log_distributions=False):
         f"{stats('temp', temp_np, fluid_mask)} temp_out:{temp_out} | "
         f"{stats('|v|', v_mag, fluid_mask)}"
     )
-    print(line)
+    _log.info("%s", line)
 
     if log_distributions:
         f_old = ctx.f_old.to_numpy()
@@ -92,7 +95,16 @@ def log_field_diagnostics(ctx, step, log_distributions=False):
         g_max = g_flat[g_ok].max() if np.sum(g_ok) else float("nan")
         f_neg = int(np.sum(f_flat < 0))
         g_neg = int(np.sum(g_flat < 0))
-        print(f"[DIAG] step={step} f_old: min={f_min:.6f} max={f_max:.6f} neg_count={f_neg} | g_old: min={g_min:.6f} max={g_max:.6f} neg_count={g_neg}")
+        _log.info(
+            "[DIAG] step=%s f_old: min=%.6f max=%.6f neg_count=%s | g_old: min=%.6f max=%.6f neg_count=%s",
+            step,
+            f_min,
+            f_max,
+            f_neg,
+            g_min,
+            g_max,
+            g_neg,
+        )
 
 
 def should_log_diagnostic(step, vis_interval, diag_start=0, diag_end=2500, diag_every=30):

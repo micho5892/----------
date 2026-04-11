@@ -1,6 +1,9 @@
 import taichi as ti
 import config
 from context import FLUID_A, SOLID, SOLID_HEAT_SOURCE, INLET, OUTLET, ROTATING_WALL
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 
 @ti.data_oriented
@@ -22,6 +25,7 @@ class LBMSimulator:
         self.d3q19 = D3Q19(sim_config.fp_dtype)
 
         self.G = -5.0  # 引力の強さ（結合係数）。マイナスで引力。後でソフトスタートさせます
+        _log.debug("LBMSimulator initialized (D3Q19, fp_dtype=%s)", sim_config.fp_dtype)
 
     @ti.func
     def is_fluid(self, ctx: ti.template(), cid):

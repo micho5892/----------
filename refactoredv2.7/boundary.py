@@ -4,6 +4,9 @@
 import taichi as ti
 import config
 from context import FLUID_A
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 
 @ti.data_oriented
@@ -264,6 +267,12 @@ class BoundaryManager:
 
             elif bc_type == "adiabatic_wall":
                 pass
+
+        _log.debug(
+            "BoundaryManager: before_macro=%s, after_macro=%s",
+            len(self.before_macro_bcs),
+            len(self.after_macro_bcs),
+        )
 
     def apply_all_before_macro(self, ctx, ramp_factor):
         for bc in self.before_macro_bcs:

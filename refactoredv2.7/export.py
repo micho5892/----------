@@ -5,6 +5,9 @@
 import numpy as np
 import imageio.v2 as imageio
 from context import SOLID, SOLID_HEAT_SOURCE
+from lbm_logger import get_logger
+
+log = get_logger(__name__)
 
 
 def build_vis_frame(ctx, cfg):
@@ -64,3 +67,4 @@ def build_vis_frame(ctx, cfg):
 def export_gif_frames(frames, filename, fps=12):
     """フレーム列をGIFファイルに保存する。"""
     imageio.mimsave(filename, frames, fps=fps)
+    log.info("GIF saved: %s", filename)

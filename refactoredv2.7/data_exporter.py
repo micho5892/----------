@@ -5,6 +5,9 @@ import taichi as ti
 import numpy as np
 import os
 import json
+from lbm_logger import get_logger
+
+_log = get_logger(__name__)
 
 class DataExporter:
     """
@@ -19,7 +22,7 @@ class DataExporter:
 
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
-            print(f"[DataExporter] Created directory: {self.output_dir}")
+            _log.info("[DataExporter] Created directory: %s", self.output_dir)
 
         # AI学習時に物理スケールを復元できるよう、メタデータも保存しておく
         self._save_metadata()
@@ -59,5 +62,10 @@ class DataExporter:
             time_p=current_time_p
         )
         
-        print(f"[DataExporter] Saved snapshot {self.save_count:04d} at t={current_time_p:.3f}s -> {filename}")
+        _log.info(
+            "[DataExporter] Saved snapshot %04d at t=%.3fs -> %s",
+            self.save_count,
+            current_time_p,
+            filename,
+        )
         self.save_count += 1
