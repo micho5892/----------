@@ -166,10 +166,34 @@ def run_simulation(**kwargs):
     steady_tolerance = kwargs.pop("steady_tolerance", 0.001) 
     steady_extra_p = kwargs.pop("steady_extra_p", 2.0)      
 
+    # 出力先: artifact_parent を指定すると「その直下に 1 実行ごとのサブフォルダ」を作成する。
+    # 未指定かつ out_dir も無いときの既定の親は results（従来と同様に results/<benchmark>_<timestamp>/）。
+    # paths_out に dict を渡すと、確定した out_dir / vti_dir / npz 相当の情報を書き戻す。
+    artifact_parent = kwargs.pop("artifact_parent", None)
+    paths_out = kwargs.pop("paths_out", None)
+    explicit_out_dir = kwargs.pop("out_dir", None)
+    explicit_vti_dir = kwargs.pop("vti_dir", None)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = kwargs.get("out_dir", f"results/{benchmark}_{timestamp}")
-    vti_dir = kwargs.get("vti_dir", f"results/{benchmark}_{timestamp}/vti")
+    run_subdir = f"{benchmark}_{timestamp}"
+
+    if artifact_parent is not None:
+        ap = str(artifact_parent).strip()
+        if not ap:
+            ap = "results"
+        os.makedirs(ap, exist_ok=True)
+        out_dir = os.path.join(ap, run_subdir)
+    elif explicit_out_dir is not None:
+        out_dir = explicit_out_dir
+    else:
+        out_dir = os.path.join("results", run_subdir)
+
     os.makedirs(out_dir, exist_ok=True)
+
+    if explicit_vti_dir is not None:
+        vti_dir = explicit_vti_dir
+    else:
+        vti_dir = os.path.join(out_dir, "vti")
     os.makedirs(vti_dir, exist_ok=True)
     
     # ファイルのパス設定
@@ -179,6 +203,7 @@ def run_simulation(**kwargs):
     
     # ロガーの起動
     logger = setup_logger(log_path)
+    logger.info("Output run directory: %s", os.path.abspath(out_dir))
 
     cfg = SimConfig(**kwargs)
     import config as config_mod
@@ -420,6 +445,14 @@ def run_simulation(**kwargs):
         logger.info(f" -> Output directory zipped to: {zip_path}")
     except Exception as e:
         logger.error(f"Failed to create zip archive for {out_dir}: {e}")
+
+    if isinstance(paths_out, dict):
+        paths_out["out_dir"] = out_dir
+        paths_out["vti_dir"] = vti_dir
+        paths_out["gif_path"] = cfg.filename
+        paths_out["npz_path"] = npz_path
+        paths_out["meta_path"] = meta_path
+        paths_out["run_subdir"] = run_subdir
 
     return current_time_p < max_time_p
 

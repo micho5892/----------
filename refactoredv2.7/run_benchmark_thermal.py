@@ -75,6 +75,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
     print(f" Starting Thermal Cavity Validation (Ra={target_Ra:.1e})")
     print(f"==================================================")
     
+    # Y は薄いスライス: 周期境界で横方向端の人工反射を減らし、2D 差温キャビティに近づける
     nx, ny, nz = 128, 4, 128
     L_domain = 0.1
     g_phys = 9.81
@@ -102,7 +103,8 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         steady_extra_p=0.5,          
         
         nx=nx, ny=ny, nz=nz,
-        Lx_p=L_domain,              
+        Lx_p=L_domain,
+        periodic_y=True,
         U_inlet_p=1.0, # ダミー(計算用)
         u_lbm=0.05,    # マッハ数エラーを避けるため低めに設定
         
@@ -125,10 +127,11 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
             "boussinesq": {"g_vec":[0.0, 0.0, -g_phys], "beta": beta_p, "T_ref": 0.5}
         },
         
+        # 左 i=0 が ID=11（高温）、右 i=nx-1 が ID=10（低温）。g 移流の ABB はこの辞書の温度を参照する。
         boundary_conditions={
-            11: {"type": "isothermal_wall", "temperature": 1.0}, # 左壁は高温
-            10: {"type": "isothermal_wall", "temperature": 0.0}, # 右壁は低温
-            21: {"type": "adiabatic_wall"},                      # 上下は断熱
+            11: {"type": "isothermal_wall", "temperature": 1.0},
+            10: {"type": "isothermal_wall", "temperature": 0.0},
+            21: {"type": "adiabatic_wall"},
         }
     )
 

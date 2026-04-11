@@ -216,7 +216,11 @@ def plot_poiseuille_validation(y_coords, w_fluid, t_fluid, U_inlet, out_dir, T_w
     print(f"\n[SUCCESS] Validation plot saved to: {plot_path}")
     plt.show()
 
-def run_channel_benchmark():
+def run_channel_benchmark(artifact_parent=None):
+    """
+    artifact_parent: この実行の成果物の「親フォルダ」。
+        未指定時は results/validation_poiseuille 。その直下に parallel_plates_<日時>/ が 1 本の実行ごとに作成される。
+    """
     print(f"==================================================")
     print(f" Starting Poiseuille Flow & Heat Transfer Validation")
     print(f"==================================================")
@@ -228,12 +232,15 @@ def run_channel_benchmark():
     global RHO_FLUID, MU_PHYS
     RHO_FLUID = fp["rho_f"]
     MU_PHYS = fp["nu"] * RHO_FLUID
-    out_dir = f"results/validation_poiseuille"
+    if artifact_parent is None:
+        artifact_parent = os.path.join("results", "validation_poiseuille")
+    run_paths = {}
 
     # --- シミュレーションの実行 ---
     run_simulation(
         benchmark="parallel_plates", # geometry.py にある平行平板
-        out_dir=out_dir,
+        artifact_parent=artifact_parent,
+        paths_out=run_paths,
         fp_dtype="float32",
         steady_detection=False,       
         steady_window_p=2.0,         
@@ -243,7 +250,7 @@ def run_channel_benchmark():
         periodic_x=True,
         periodic_y=False,
         periodic_z=False,
-        neem_isothermal_wall=False,
+        # neem_isothermal_wall=False,
         
         nx=nx, ny=ny, nz=nz,
         Lx_p=0.1,              
@@ -275,18 +282,35 @@ def run_channel_benchmark():
         }
     )
 
-    # --- 実行終了後、最新の .npz ファイルを探して解析 ---
-    npz_files =[f for f in os.listdir(out_dir) if f.endswith('_fields.npz')]
-    if not npz_files:
-        print("[ERROR] No .npz field data found.")
+    out_dir = run_paths.get("out_dir")
+    if not out_dir or not os.path.isdir(out_dir):
+        print("[ERROR] run_simulation did not return a valid output directory (paths_out).")
         return
 
-    npz_files.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
-    npz_path = os.path.join(out_dir, npz_files[0])
+    npz_path = run_paths.get("npz_path")
+    if not npz_path or not os.path.isfile(npz_path):
+        npz_files = [f for f in os.listdir(out_dir) if f.endswith("_fields.npz")]
+        if not npz_files:
+            print("[ERROR] No .npz field data found.")
+            return
+        npz_files.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
+        npz_path = os.path.join(out_dir, npz_files[0])
     
     # プロファイルの抽出とプロット
     y_coords, w_prof, t_prof = extract_channel_profiles_from_npz(npz_path, nx, ny, nz)
     plot_poiseuille_validation(y_coords, w_prof, t_prof, U_inlet_p, out_dir)
 
 if __name__ == "__main__":
-    run_channel_benchmark()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="平行平板ポアズイユ＋熱伝達検証。成果物は artifact_parent 直下に 1 実行ごとのフォルダへ保存。"
+    )
+    parser.add_argument(
+        "artifact_parent",
+        nargs="?",
+        default=os.path.join("results", "validation_poiseuille"),
+        help="実行ごとのサブフォルダを作成する親ディレクトリ（既定: results/validation_poiseuille）",
+    )
+    args = parser.parse_args()
+    run_channel_benchmark(artifact_parent=args.artifact_parent)

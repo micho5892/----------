@@ -105,12 +105,11 @@ class LBMSimulator:
                         ctx.g_new[ip, jp, kp, d] = g_curr
                     else:
                         inv_d = self.d3q19.inv_d[d]
-                        # ▼ 究極の解決策: Anti-Bounce-Back で壁面(dx/2)の温度を正確に T_w=1.0 に固定
-                        if neighbor_cid == 10: 
-                            T_w = 1.0
-                            ctx.g_new[i, j, k, inv_d] = -g_curr + 2.0 * self.d3q19.w[d] * T_w
+                        # 固体: boundary_conditions の isothermal_wall なら ABB で Tw を課す。それ以外は BB。
+                        if ctx.g_wall_use_abb[neighbor_cid] != 0:
+                            Tw = ctx.g_wall_tw[neighbor_cid]
+                            ctx.g_new[i, j, k, inv_d] = -g_curr + 2.0 * self.d3q19.w[d] * Tw
                         else:
-                            # 断熱壁は通常のBounce-back
                             ctx.g_new[i, j, k, inv_d] = g_curr
                 else:
                     inv_d = self.d3q19.inv_d[d]
