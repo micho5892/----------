@@ -1,0 +1,42 @@
+# CoolProp で流体物性を取得し、固体は SOLID_MATS から読み込みます。
+# fixed: 一次パラメータのみ（nx, L_domain, L_ref, U, u_lbm, nu, k_f, rho_f, Cp_f, k_s, rho_s, Cp_s）
+#   - 数値: その値で固定
+#   - true: 上記ロード直後の primary の値で固定（物性は nu, k_f, rho_f, Cp_f, k_s, rho_s, Cp_s など）
+# ranges: 任意の変数名（導出量含む）に [min, max]。SLSQP の制約として厳守（区間外にならない）。
+#   min==max のときは等式制約（その値に一致）。
+# fix_cr: true のとき、物性ロード直後の C_r を等式制約で維持します。
+# conda activate lbm-sim
+# cd C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション
+# python lbm_ui_designer/lbm_param_optimize.py --config lbm_ui_designer/lbm_param_optimize.example.yaml
+fluid: Air
+temperature_K: 300
+pressure_Pa: 101325
+solid: Copper
+fix_cr: true
+
+fixed:
+  nx: 224
+  nu: true
+  k_f: true
+  rho_f: true
+  k_s: true
+  L_domain: 0.1
+  L_ref: 0.01428
+  u_lbm: 0.15       # ★ここを 0.10 から 0.15 に引き上げ！
+
+ranges:
+  Re:
+    min: 300        # ★高Re数を狙うため 300 にアップ
+    max: 800
+  tau_f マージン:
+    min: 0.04       # ★LBMが耐えられるギリギリの安全ライン (tau_f = 0.52) に緩和
+    max: 2.00
+  tau_gf マージン:
+    min: 0.04       # ★熱の発散を防ぐためこちらも 0.02 に緩和
+    max: 2.00
+  tau_gs マージン:
+    min: 0.05
+    max: 2.00
+
+regularization: 1.0e-3
+maxiter: 30000

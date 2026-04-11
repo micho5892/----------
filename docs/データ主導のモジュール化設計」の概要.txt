@@ -1,0 +1,151 @@
+今後の高度な拡張（STL、任意境界、2流体、3D可視化、計算量削減）を見据えると、現在の「すべてが一つのクラス（LBMSimulator）に密結合している状態」から、**「役割ごとにコンポーネント（部品）を分け、共通のルールで連携する設計」**へと抜本的にリファクタリングする必要があります。
+
+おっしゃる通り、関数間の「戻り値（インターフェース）の統一」が最大の課題になります。これを解決するための**「データ主導のモジュール化設計」**の概要を提案します。
+
+💡 解決のコアアイデア：「セルID（タグ）マップ」の導入
+
+現状は mask に「0:流体, 1:固体」という情報しか持たせていませんが、これを拡張して**「空間内の各マス（セル）にID（役割）を振った3D配列」**を中心に据えます。
+
+ID = 0: 流体A（内部）
+
+ID = 1: 流体B（内部）
+
+ID = 10: 固体（通常）
+
+ID = 11: 固体（熱源面）
+
+ID = 20: 流体Aの入口
+
+ID = 21: 流体Aの出口
+
+すべてのモジュールは、この 「IDマップ」 と 「物性値の辞書」 を共通言語としてやり取りすることで、形状が変わろうが機能が増えようが、戻り値や引数の構造を変えずに済みます。
+
+🏗️ 設計概要（モジュール分割案）
+
+システムを以下の5つの独立したモジュール（クラス群）に分割します。
+
+1. Geometry モジュール（形状・領域管理）
+
+役割: 空間のIDマップとSDF（距離場）を生成し、幾何学的な特徴を計算する。
+
+機能:
+
+load_stl(): STLからボクセル化し、IDマップに書き込む。
+
+set_boundary_zone(): 空間の特定の座標範囲（例: Z=0面）を「入口(ID=20)」や「熱源面(ID=11)」として上書きする。
+
+get_hydraulic_diameter(): IDマップの形状から代表長さを自動・または半自動で計算して返す。
+
+2. Config & Material モジュール（物性・条件管理）
+
+役割: 物理パラメータや、各IDに対する条件を一元管理する。
+
+機能:
+
+「ID=0の流体は空気（Pr=0.71）」「ID=1の流体は水（Pr=7.0）」といったマッピングを保持する。
+
+形状が変わって代表長さが変わった場合は、Geometryモジュールから値を受け取り、自動で無次元化パラメータ（Re, Nuの基準）を再計算する。
+
+3. Boundary Manager モジュール（境界条件適用器）
+
+役割: LBMの計算ループの途中で、IDマップに従って境界条件を適用する。
+
+機能:
+
+空間全体をスキャンし、ID==20なら速度入口条件、ID==11なら定熱流束条件（固体内部への熱伝導）を適用する。
+
+どこに境界があるかをハードコーディング（if k == nz-1: など）せず、純粋にIDだけで判断させる。
+
+4. LBM Solver モジュール（物理計算エンジン）
+
+役割: 実際の衝突・並進ステップ（Collide & Stream）を実行する。
+
+機能:
+
+FluidSolver と ThermalSolver に分離する。
+
+2流体や固体内熱伝導（共役熱伝達）に対応するため、熱のSolverは「IDが流体でも固体でも、各々の熱伝導率（緩和時間 
+𝜏
+τ
+）を使って解く」ように一般化する。
+
+5. Exporter / Visualizer モジュール（出力・可視化）
+
+役割: シミュレーション結果を3D描画用のデータとして出力する。
+
+機能:
+
+Python標準の画像出力ではなく、**「VTK（またはVTI）形式」**で3Dデータとして書き出す。
+
+これにより、シミュレーション後に「ParaView」やPythonの「PyVista」といった3D解析ソフトを使って、透過表示、任意断面のカット、流線の描画、3Dアニメーション化が圧倒的に綺麗かつ簡単にできるようになる。
+
+🚀 計算量とメモリ削減のためのアプローチ（精度を落とさない）
+
+将来の機能拡張に向けて、Taichiの強力な機能を活用して最適化を行います。
+
+Taichi Sparse Data Structure (疎行列構造) の利用
+Taichiには ti.root.pointer や ti.root.bitmasked という機能があります。これを使うと、「流体が存在しない固体のコア部分」や「動きがない領域」のメモリ割り当てと計算を完全にスキップできます。これにより、解像度を上げても計算量とメモリ消費を劇的に抑えられます。
+
+ダブルバッファリングの廃止（In-Place Stream）
+現在 f_old と f_new という2つの巨大な配列を持っていますが、A-Aパターン（Esoteric Pull/Pushなど）と呼ばれるアルゴリズムを使えば、1つの配列を上書き更新でき、メモリ使用量をほぼ半分にできます。
+
+💻 コードの骨組み（疑似コード）
+
+このようなクラス構成にします。
+
+code
+Python
+download
+content_copy
+expand_less
+class SimulationContext:
+    """すべてのデータをまとめる箱（共通インターフェース）"""
+    def __init__(self, nx, ny, nz):
+        self.cell_id = ti.field(dtype=ti.i32, shape=(nx, ny, nz))
+        self.sdf = ti.field(dtype=ti.f32, shape=(nx, ny, nz))
+        self.f = ti.field(...) # 速度分布関数
+        self.g = ti.field(...) # 温度分布関数
+        # マクロ物理量
+        self.rho = ti.field(...)
+        self.vel = ti.Vector.field(...)
+        self.temp = ti.field(...)
+
+class GeometryBuilder:
+    def load_stl(self, ctx: SimulationContext, filename: str): ...
+    def set_inlet_outlet(self, ctx: SimulationContext, inlet_box, outlet_box): ...
+    def set_heat_source(self, ctx: SimulationContext, target_surface_box): ...
+
+class BoundaryConditionManager:
+    def apply_velocity_bc(self, ctx: SimulationContext, target_id: int, vel_vec): ...
+    def apply_heat_flux_bc(self, ctx: SimulationContext, target_id: int, flux_val): ...
+
+class LBM_Solver:
+    def collide_and_stream(self, ctx: SimulationContext, materials_dict):
+        # 固体、流体A、流体Bそれぞれの緩和時間を materials_dict から取得して計算
+        pass
+
+class VTKExporter:
+    def export_step(self, ctx: SimulationContext, step: int):
+        # ParaView等で読み込める .vti ファイルとして出力
+        pass
+
+# --- メインスクリプト ---
+ctx = SimulationContext(128, 128, 256)
+geo = GeometryBuilder()
+geo.load_stl(ctx, "heat_exchanger.stl")
+geo.set_inlet_outlet(ctx, inlet_box=[...], outlet_box=[...])
+
+solver = LBM_Solver()
+bc = BoundaryConditionManager()
+exporter = VTKExporter()
+
+for step in range(10000):
+    solver.collide_and_stream(ctx, materials)
+    bc.apply_velocity_bc(ctx, target_id=20, vel_vec=[0,0,0.1])
+    bc.apply_heat_flux_bc(ctx, target_id=11, flux_val=0.05)
+    
+    if step % 100 == 0:
+        exporter.export_step(ctx, step)
+次のアクションは？
+
+まずはこの設計思想に基づいて、**「IDマップ（cell_id）の導入」と「VTKエクスポート（3D可視化対応）」**から着手するのがおすすめです。この2つが変わるだけで、STLの読み込みや複雑な熱源の配置がパズルのように簡単に実装できるようになります。

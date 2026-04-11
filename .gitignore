@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.venv/
+venv/
+env/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter / tooling
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# 実験・シミュレーション出力（必要なら個別に追跡）
+results/
+
+# 大容量データ・配布物（Git に載せない）
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+ai_dataset/
+
+# 学習済みモデル・重いバイナリ
+*.pth
+*.pt
+*.onnx
+*.h5
+*.ckpt
+
+# VTK / ParaView（生成物があれば）
+*.vtk
+*.vtu
+*.pvtu
+*.vtp

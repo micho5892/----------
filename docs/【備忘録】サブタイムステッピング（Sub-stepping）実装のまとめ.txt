@@ -1,0 +1,62 @@
+【備忘録】サブタイムステッピング（Sub-stepping）実装のまとめ
+
+今後、相変化モデルの追加や、比熱（Pr数）の妥協なしで高プラントル流体を解くために必須となる「サブタイムステッピング」の設計書をMarkdownでまとめました。実装を再開する際にお役立てください。
+
+#### 📌 目的と仕組み
+*   **目的：** 現実の水の比熱（$Cp=4180$, $Pr=7.0$）や相変化（沸騰・凝縮）のダイナミクスを、LBMで発散させずに（$\tau_g > 0.5$ を保ったまま）解くため。
+*   **仕組み：** 速度場 $f$ を 1回（時間 $\Delta t$）計算する間に、温度場 $g$ の計算を $N$回（時間 $\Delta t / N$）回す。
+*   **効果：** $\Delta t$ が小さくなることで、LBM空間内の熱拡散率 $\alpha_{lbm}$ が小さくなり、$\tau_g$ が 0.5 から遠ざかり安全圏に入る。
+
+#### 🔧 実装の3ステップ
+
+**1. `config.py` の修正（パラメーターの受け取りと $\tau$ の計算）**
+```python
+# 引数からサブステップ数を受け取る
+self.thermal_sub_steps = kwargs.get('thermal_sub_steps', 1)
+
+# 熱の tau_g は dt を N で割った「仮想的な細かい時間刻み」で計算する
+dt_thermal = self.dt / self.thermal_sub_steps
+alpha_lbm = alpha * dt_thermal / (self.dx**2)
+tau_g = 3.0 * alpha_lbm + 0.5
+```
+
+**2. `solver.py` のカーネル分離**
+現在VRAM削減のために結合している `collide_and_stream` を、速度場($f$)用と温度場($g$)用に再度分離します。
+```python
+@ti.kernel
+def collide_and_stream_fluid(self, ctx: ti.template()):
+    # f のみの衝突と移流 (f_old -> f_new)
+
+@ti.kernel
+def collide_and_stream_thermal(self, ctx: ti.template(), sub_step_dt_ratio: ti.f32):
+    # g のみの衝突と移流 (g_old -> g_new)
+    # ※ 移流に使う流速 v は、サブステップ比率 (1/N) を掛けて移動距離を短くする
+```
+
+**3. `main.py` メインループの階層化**
+流体が1歩進む間に、熱は N 歩小走りで進むループ構造にします。
+```python
+while current_time_p < max_time_p:
+    
+    # --- 速度場の計算 (1回) ---
+    physics_manager.apply_all(ctx, current_time_p) # 多相流などの力
+    sim.collide_and_stream_fluid(ctx)
+    bc_manager.apply_all_before_macro_fluid(ctx)
+    sim.update_macro_fluid(ctx)
+    
+    # --- 温度場のサブステッピング (N回) ---
+    sub_ratio = 1.0 / cfg.thermal_sub_steps
+    for _ in range(cfg.thermal_sub_steps):
+        sim.collide_and_stream_thermal(ctx, sub_ratio)
+        bc_manager.apply_all_before_macro_thermal(ctx)
+        
+        # 相変化がある場合はここで潜熱 S_g の計算と密度の更新を行う
+        # physics_manager.apply_phase_change(ctx)
+        
+        sim.update_macro_thermal(ctx)
+        bc_manager.apply_all_after_macro(ctx) # 等温壁などの熱境界
+    
+    # ... (以下略) ...
+```
+
+この実装が完了すれば、相変化・沸騰シミュレータへの道が完全に開かれます！

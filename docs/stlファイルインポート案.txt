@@ -1,0 +1,102 @@
+
+
+
+はい、**STLファイルを読み込んでシミュレーションの形状として使うことは十分に可能**です。
+
+LBM（格子ボルツマン法）は空間をブロック（格子）に分割して計算するため、STLのような「ポリゴンデータ（面データ）」を、「ボクセル（ブロックの集合）」に変換する処理（**ボクセル化**）が必要になります。
+
+これを実装するには、Pythonの3D形状処理ライブラリである `trimesh` と、距離計算のための `scipy` を使うのが最も簡単で確実です。
+
+### 準備
+事前に以下のライブラリをインストールする必要があります。
+（`rtree` は点の内部/外部判定を高速化するために必要です）
+```bash
+pip install trimesh scipy rtree
+```
+
+### 実装コード（追加部分）
+これまでの関数（`build_karman_cylinder`など）の代わりに、STLを読み込んで Taichi の `mask` と `sdf`（距離場）フィールドにデータを書き込む関数を追加します。
+
+以下のコードをスクリプトに追記してください。
+
+```python
+import trimesh
+import scipy.ndimage as ndimage
+import numpy as np
+
+def build_from_stl(mask_field, sdf_field, nx, ny, nz, stl_filename):
+    print(f"Loading STL: {stl_filename} ...")
+    
+    # 1. STLファイルの読み込み
+    mesh = trimesh.load(stl_filename)
+
+    # 2. メッシュのスケールと位置調整
+    # （シミュレーション空間に合わせて自動リサイズ・配置する例）
+    mesh.apply_translation(-mesh.centroid) # 一旦原点に移動
+    
+    # Y方向の長さがシミュレーション空間(ny)の40%になるようにスケール調整
+    scale_factor = (ny * 0.4) / np.max(mesh.extents)
+    mesh.apply_scale(scale_factor)
+    
+    # 配置したい場所へ移動（空間の中央、Z方向はやや上流に配置）
+    mesh.apply_translation([nx * 0.5, ny * 0.5, nz * 0.8])
+
+    # 3. 空間全体の座標グリッドを作成して内外判定（ボクセル化）
+    print("Voxelizing STL (calculating inside/outside)...")
+    x = np.arange(nx)
+    y = np.arange(ny)
+    z = np.arange(nz)
+    xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+    points = np.c_[xx.ravel(), yy.ravel(), zz.ravel()]
+
+    # 点がメッシュの「内部(True)」か「外部(False)」かを判定
+    # ※数百万点の判定を行うため、数十秒かかる場合があります
+    inside = mesh.contains(points)
+    
+    # Taichi用の mask 配列に変換（内部=1:固体, 外部=0:流体）
+    mask_np = inside.reshape((nx, ny, nz)).astype(np.int32)
+
+    # 4. SDF（符号付き距離場）の高速計算
+    print("Calculating SDF (Signed Distance Field)...")
+    # scipyの距離変換(edt)を使って壁からの距離を計算
+    dist_out = ndimage.distance_transform_edt(mask_np == 0) # 外部の距離
+    dist_in  = ndimage.distance_transform_edt(mask_np == 1) # 内部の距離
+    
+    # LBMの境界条件(IBB法)用に距離場を合成（外側が正、内側が負）
+    sdf_np = dist_out - dist_in
+
+    # 5. Taichiフィールドへデータを転送
+    mask_field.from_numpy(mask_np)
+    sdf_field.from_numpy(sdf_np.astype(np.float32))
+    print("STL import complete!")
+```
+
+### 使い方
+`run_simulation` 関数の中で形状を作っている部分を、上記の関数に差し替えるだけです。
+
+**変更前：**
+```python
+    cfg = SimConfig(**kwargs)
+    sim = LBMSimulator(cfg)
+
+    # ==== 変更：カルマン渦用の形状定義を適用 ====
+    build_karman_cylinder(sim.mask, sim.sdf, cfg.nx, cfg.ny, cfg.nz)
+    sim.init_fields()
+```
+
+**変更後：**
+```python
+    cfg = SimConfig(**kwargs)
+    sim = LBMSimulator(cfg)
+
+    # ==== STLファイルから形状を生成 ====
+    # ここに読み込みたいSTLファイルのパスを指定します
+    build_from_stl(sim.mask, sim.sdf, cfg.nx, cfg.ny, cfg.nz, "your_model.stl")
+    sim.init_fields()
+```
+
+### 注意点
+1. **閉じたポリゴン（Watertight）であること**
+   `mesh.contains()` で「内部・外部」を判定するため、穴が開いている（面が破綻している）STLファイルだと正確にボクセル化できず、流体が漏れる原因になります。
+2. **初期化の計算時間**
+   800万セル以上の空間座標に対してSTLとの当たり判定と距離計算を行うため、シミュレーション開始前の**最初の読み込み時に数十秒〜数分程度の時間**がかかります。一度計算が始まれば、あとはLBMの計算速度で通常通り進みます。

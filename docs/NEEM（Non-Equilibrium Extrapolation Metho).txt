@@ -1,0 +1,73 @@
+NEEM（Non-Equilibrium Extrapolation Method：非平衡補外法）の本質は、**「境界点での非平衡成分（勾配情報）を、最も信頼できる近傍の流体点からコピーして再構成する」**ことにあります。
+インレットやアウトレットだけでなく、あらゆる境界（壁面など）でNEEMを正しく、かつ汎用的に実装するための手順とコードの構造を整理しました。
+1. NEEM 実装の全体アルゴリズム
+NEEMを正しく機能させるには、以下の3つのステップを毎ステップ、マクロ変数の計算直後かつ衝突ステップの前に実行します。
+境界セルの特定: 境界（Inlet, Outlet, Wallなど）に隣接する「流体セル」を探す。
+非平衡成分の抽出: その流体セルにおける g_{neq} = g - g_{eq} を計算する。
+境界分布関数の再構成: 境界で「守るべき値（温度 T_b や流速 \mathbf{v}_b）」から g_{eq} を作り、そこに先ほどの g_{neq} を足す。
+2. コード実装のポイント（ロジックの修正）
+現在のコードの VelocityInlet などにあるロジックを、以下のように「非平衡成分を全方位から重み付けして持ってくる」形に汎用化します。
+修正案：汎用的な NEEM 適用関数
+@ti.func
+def apply_neem_generic(self, ctx, i, j, k, target_val, target_vel, is_temperature=True):
+    """
+    target_val: 境界での目標値 (温度なら T, 圧力なら rho)
+    target_vel: 境界での目標流速ベクトル
+    """
+    g_neq_sum = ti.Vector.zero(self._fp, 19)
+    count = 0
+    
+    # 1. 周囲の「純粋な流体セル」から勾配情報を集める
+    for d in ti.static(range(1, 19)):
+        ip, jp, kp = i + self.e[d][0], j + self.e[d][1], k + self.e[d][2]
+        # 領域内かつ流体セル(FLUID_A)であるかチェック
+        if 0 <= ip < ctx.nx and 0 <= jp < ctx.ny and 0 <= kp < ctx.nz:
+            if ctx.cell_id[ip, jp, kp] == FLUID_A:
+                rho_f = ctx.rho[ip, jp, kp]
+                v_f = ctx.v[ip, jp, kp]
+                
+                if is_temperature:
+                    # 温度場 g の非平衡成分を抽出
+                    t_f = ctx.temp[ip, jp, kp]
+                    for d2 in ti.static(range(19)):
+                        geq_f = self.get_geq(t_f, v_f, d2)
+                        g_neq_sum[d2] += (ctx.g_old[ip, jp, kp, d2] - geq_f)
+                else:
+                    # 速度場 f の非平衡成分を抽出
+                    for d2 in ti.static(range(19)):
+                        feq_f = self.get_feq(rho_f, v_f, d2)
+                        g_neq_sum[d2] += (ctx.f_old[ip, jp, kp, d2] - feq_f)
+                count += 1
+
+    # 2. 境界値を再構成
+    if count > 0:
+        g_neq_avg = g_neq_sum / float(count)
+        for d in ti.static(range(19)):
+            if is_temperature:
+                # 境界温度 target_val と 境界流速 target_vel から平衡分布を作る
+                geq_b = self.get_geq(target_val, target_vel, d)
+                ctx.g_new[i, j, k, d] = geq_b + g_neq_avg[d]
+            else:
+                feq_b = self.get_feq(target_val, target_vel, d)
+                ctx.f_new[i, j, k, d] = feq_b + g_neq_avg[d]
+
+
+3. 部位別：正しく実装するための「境界値」の決め方
+NEEMを使う際、target_val に何を渡すかが精度の鍵です。
+① インレット (Inlet)
+温度 (T): 設定値をそのまま渡す（Dirichlet条件）。
+流速 (\mathbf{v}): 設定値をそのまま渡す。
+② アウトレット (Outlet)
+温度 (T): **「内側の流体セルの平均温度」**を渡す。これにより、熱がスムーズに外へ流れ出す。
+密度 (\rho): 出口圧力を指定する場合は 1.0 固定（Dirichlet）。
+流速 (\mathbf{v}): **「内側の流体セルの流速」**をコピーして渡す（自由流出条件）。
+③ 壁面 (Wall) - 等温壁の場合
+Bounce-back（跳ね返り）ではなくNEEMを使うことも可能です。
+温度 (T): 壁面温度を渡す。
+流速 (\mathbf{v}): [0, 0, 0]（または壁の移動速度）を渡す。
+※ LBMでは壁面には Simple Bounce-back が使われがちですが、滑らかな曲面や高精度な熱伝達を解くならNEEMの方が「カクつき」を抑えられます。
+4. 精度のための「厳しい」アドバイス
+外挿の距離: 現在のNEEMは「隣の1マス」からコピーしていますが、より高精度にするなら「2マス隣」までの情報を使って線形外挿することもあります。まずは1マス隣で「カクつき」が消えるか確認してください。
+コーナー（角）の処理: インレットと壁が接する「角の1セル」は、流体セルが少なくて count が小さくなります。ここでのエラーが計算全体の不安定化を招くことが多いため、if count == 0 の時のフォールバック（単なる平衡分布代入など）を必ず入れてください。
+Taichiの同期: g_new に書き込んだ後、次のステップで g_old に戻すタイミングを間違えると、1ステップ古い勾配を使い続けることになります。
+このNEEMの実装が正しくなると、壁面付近の温度勾配（熱流束）の数値振動が劇的に減り、熱交換器のシミュレーションにおいて信頼性の高い Nu 数が得られるようになります。まずは特定の断面の温度プロファイルを表示し、境界での「カクつき」が消えるか試してみてください！

@@ -1,0 +1,20 @@
+---
+description: このリポジトリの Python は conda 環境 lbm-sim を使う（base 禁止）
+alwaysApply: true
+---
+
+# Python / Conda 環境
+
+- **必須環境名**: `lbm-sim`（ユーザーが用意した conda 環境）。
+- **`(base)` やシステムの `python` でスクリプトを実行しない。** 依存関係が足りず `ModuleNotFoundError` になる。
+- ターミナルで実行するときは、次のいずれかに統一する。
+  - `conda activate lbm-sim` のあと `python ...`
+  - **`conda run -n lbm-sim python ...`**（activate 忘れを防げるので優先してよい）
+- プロジェクトルートの `environment.yml` が環境の参照用。新規環境は `conda env create -f environment.yml`（既存 `lbm-sim` がある場合は名前が衝突するので、更新は `conda env update -f environment.yml` などで調整する）。
+
+## このワークスペースでよく触るスクリプト例
+
+- Streamlit UI: `streamlit run lbm_ui_designer/app.py`
+- パラメータ最適化: `python lbm_ui_designer/lbm_param_optimize.py -c lbm_ui_designer/lbm_param_optimize.example.yaml`
+
+いずれも **`lbm-sim` 上の Python** で実行すること。
