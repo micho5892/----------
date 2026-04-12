@@ -169,6 +169,7 @@ def run_simulation(**kwargs):
     from analytics import Analytics
     from physics import PhysicsManager
     from data_exporter import DataExporter
+    from diagnostics import log_parallel_plates_transport_diagnostics
 
     try:
         from vtk_export import export_step
@@ -240,6 +241,8 @@ def run_simulation(**kwargs):
     logger.info("Output run directory: %s", os.path.abspath(out_dir))
 
     cfg = SimConfig(**kwargs)
+    # IBM の力ログなど、実行フォルダ（.log / .npz と同階層）に出す
+    cfg.out_dir = os.path.abspath(out_dir)
     import config as config_mod
     config_mod.TI_FLOAT = cfg.fp_dtype
     ctx = SimulationContext(cfg.nx, cfg.ny, cfg.nz, cfg.n_particles, cfg.fp_dtype)
@@ -268,9 +271,13 @@ def run_simulation(**kwargs):
     physics_manager = PhysicsManager(sim.d3q19, cfg)
     analytics = Analytics(sim.d3q19, cfg)
     sim.init_fields(ctx)
-    logger.info(
-        f"Nu model: {analytics.nu_model_name} | L_ref={analytics.nu_l_ref_p:.6e} | k_ref_mode={analytics.nu_k_ref_mode}"
-    )
+    if benchmark == "parallel_plates":
+        logger.info(
+            "Nu model: %s | L_ref=%.6e | k_ref_mode=%s",
+            analytics.nu_model_name,
+            analytics.nu_l_ref_p,
+            analytics.nu_k_ref_mode,
+        )
 
     if steady_detection:
         dt_sample = cfg.dt * cfg.vis_interval  # updateを呼ぶ実時間間隔
@@ -344,7 +351,9 @@ def run_simulation(**kwargs):
 
             if benchmark == "parallel_plates":
                 k_target = int(cfg.nz * 0.15)
-                local_nu = analytics.get_local_Nu(ctx, k_target)
+                local_nu = analytics.get_local_Nu(
+                    ctx, k_target, log_thermal_slice=True
+                )
                 local_t = temp_np[cfg.nx//2, cfg.ny//2, k_target]
                 
                 # ▼ 判定には局所値ではなく、領域全体の全エネルギーハッシュを使う
@@ -354,6 +363,9 @@ def run_simulation(**kwargs):
                 
                 # ログの表示用にはNu数と温度を残す
                 monitor_name = f"Nu={local_nu:.2f} | T={local_t:.3f}"
+                log_parallel_plates_transport_diagnostics(
+                    ctx, cfg, k_target=k_target, logger=logger, step=step
+                )
             elif benchmark == "cavity":
                 cx, cy, cz = cfg.nx//2, cfg.ny//2, cfg.nz//2
                 monitor_val_v = (v_np[cx, cy, cz, 0]**2 + v_np[cx, cy, cz, 2]**2)**0.5
@@ -501,6 +513,8 @@ def run_simulation(**kwargs):
         paths_out["npz_path"] = npz_path
         paths_out["meta_path"] = meta_path
         paths_out["run_subdir"] = run_subdir
+        paths_out["log_path"] = log_path
+        paths_out["ibm_forces_csv"] = os.path.join(out_dir, "ibm_forces.csv")
 
     return current_time_p < max_time_p
 

@@ -1,155 +1,253 @@
 import os
+import sys
+import importlib
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from scipy.fft import fft, fftfreq
 
-# シミュレータ本体からのインポート
-from main import run_simulation
+# LBMシミュレータ本体とオプティマイザのインポート
+from main import run_simulation, run_optimize
+from lbm_logger import get_logger, configure_logging
 
-# ==============================================================================
-# Roshko (1954) 等に基づく円柱周りのSt数の経験式 (層流 Re=50〜200)
-# ==============================================================================
-def theoretical_strouhal(re):
-    if re < 47:
-        return 0.0 # 臨界Re未満では渦は放出されない
-    return 0.212 - 4.5 / re
+_log = get_logger(__name__)
 
-def analyze_and_plot_strouhal(csv_path, target_re, U_inlet, D_phys, out_dir):
-    # プローブデータの読み込み
-    data = np.loadtxt(csv_path, delimiter=',', skiprows=1)
-    time = data[:, 0]
-    vx = data[:, 1]
+#
+# lbm_ui_designer から最適化関数を呼び出すためのパス追加
+# （refactoredv2.5/main.py から見たプロジェクトルート: 1階層上）
+#
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_LBM_UI_DIR = os.path.join(_PROJECT_ROOT, "lbm_ui_designer")
+if _LBM_UI_DIR not in sys.path:
+    sys.path.insert(0, _LBM_UI_DIR)
+
+run_optimize = None
+try:
+    lbm_opt = importlib.import_module("lbm_param_optimize")
+    run_optimize = getattr(lbm_opt, "run_optimize", None)
     
-    # 初期の過渡状態(渦が安定するまで)を切り捨てる (後半の60%だけを使用)
-    start_idx = int(len(time) * 0.4)
-    time_steady = time[start_idx:]
-    vx_steady = vx[start_idx:]
+except Exception:
+    # sim の実行自体を止めない（optimizer 側の依存が無い場合があるため）
+    run_optimize = None
+
+def analyze_and_plot(force_csv, target_re, U_inlet_lbm, D_lbm, ny_lbm, out_dir):
+    """
+    保存されたCSVから抗力(C_D)と揚力(C_L)を計算し、
+    FFTを用いてストルーハル数(St)を特定・可視化する。
+    """
+    _log.info("Analyzing IBM force data from: %s", force_csv)
+    data = np.loadtxt(force_csv, delimiter=',', skiprows=1)
     
-    # -----------------------------------------------------
-    # 1. ピーク検出(Time Domain)による周波数計算
-    # -----------------------------------------------------
-    peaks, _ = find_peaks(vx_steady)
-    if len(peaks) < 2:
-        print("[ERROR] Not enough peaks found. Simulation time might be too short.")
-        return
-        
-    # ピーク間の平均時間から周期(T)と周波数(f)を求める
-    peak_times = time_steady[peaks]
-    avg_period = np.mean(np.diff(peak_times))
-    f_time = 1.0 / avg_period
-    st_time = f_time * D_phys / U_inlet
+    steps = data[:, 0]
+    fx_lbm = data[:, 1] # X方向の力 (揚力)
+    fz_lbm = data[:, 3] # Z方向の力 (抗力: Z方向から風が吹いているため)
+
+    # 最初の50%は過渡状態(渦が安定する前)として捨てる
+    start_idx = int(len(steps) * 0.5)
+    steps_steady = steps[start_idx:]
+    fx_steady = fx_lbm[start_idx:]
+    fz_steady = fz_lbm[start_idx:]
+
+    # LBM単位系での係数計算 (C_D, C_L)
+    rho_lbm = 1.0 # LBMでの基準密度
+    A_lbm = D_lbm * ny_lbm # 前面投影面積(LBM単位)
+    q_lbm = 0.5 * rho_lbm * (U_inlet_lbm**2) * A_lbm
+
+    cl = fx_steady / q_lbm
+    cd = np.abs(fz_steady) / q_lbm  # 風下方向なので絶対値をとる
+
+    cd_mean = np.mean(cd)
+    cl_amp = (np.max(cl) - np.min(cl)) / 2.0
+
+    # FFTによる St数 の計算 (サンプリング間隔の特定)
+    dt_record_lbm = steps_steady[1] - steps_steady[0]
+    N = len(cl)
     
-    # -----------------------------------------------------
-    # 2. FFT(Frequency Domain)による周波数計算
-    # -----------------------------------------------------
-    dt = time_steady[1] - time_steady[0]
-    N = len(vx_steady)
-    yf = fft(vx_steady - np.mean(vx_steady)) # 直流成分を除去してFFT
-    xf = fftfreq(N, dt)[:N//2]
+    # 直流成分を除去してFFT
+    yf = fft(cl - np.mean(cl))
+    xf = fftfreq(N, dt_record_lbm)[:N//2]
     
-    # 最大パワーを持つ周波数を抽出
     dominant_idx = np.argmax(np.abs(yf[:N//2]))
-    f_fft = xf[dominant_idx]
-    st_fft = f_fft * D_phys / U_inlet
+    f_lbm = xf[dominant_idx]
     
-    # 理論値との比較
-    st_theory = theoretical_strouhal(target_re)
-    
-    print(f"\n=== Strouhal Number Benchmark (Re = {target_re}) ===")
-    print(f" Theoretical St  : {st_theory:.4f}")
-    print(f" LBM St (Peaks)  : {st_time:.4f} (Error: {abs(st_time-st_theory)/st_theory*100:.2f}%)")
-    print(f" LBM St (FFT)    : {st_fft:.4f} (Error: {abs(st_fft-st_theory)/st_theory*100:.2f}%)")
+    # St = f * D / U
+    st_fft = f_lbm * D_lbm / U_inlet_lbm
 
-    # -----------------------------------------------------
+    _log.info("==================================================")
+    _log.info(f" IBM Cylinder Benchmark (Re = {target_re}) Results")
+    _log.info("==================================================")
+    _log.info(f" Mean Drag Coefficient (C_D) : {cd_mean:.4f}  (Target: ~1.34)")
+    _log.info(f" Lift Coefficient Amp  (C_L) : ±{cl_amp:.4f}  (Target: ~±0.3)")
+    _log.info(f" Strouhal Number       (St)  : {st_fft:.4f}  (Target: ~0.165)")
+
     # グラフの描画
-    # -----------------------------------------------------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
-    # 時系列波形
-    ax1.plot(time_steady, vx_steady, 'b-')
-    ax1.plot(time_steady[peaks], vx_steady[peaks], 'ro')
-    ax1.set_title('Cross-stream Velocity (Probe)')
-    ax1.set_xlabel('Time [s]')
-    ax1.set_ylabel('Vx [m/s]')
+    # 係数の時系列推移
+    ax1.plot(steps_steady, cd, label='Drag $C_D$', color='red')
+    ax1.plot(steps_steady, cl, label='Lift $C_L$', color='blue')
+    ax1.set_title(f'Force Coefficients (Re={target_re})')
+    ax1.set_xlabel('LBM Steps')
+    ax1.set_ylabel('Coefficient')
     ax1.grid(True, linestyle='--')
+    ax1.legend()
     
     # FFTスペクトル
     ax2.plot(xf, 2.0/N * np.abs(yf[0:N//2]), 'g-')
-    ax2.axvline(x=f_fft, color='r', linestyle='--', label=f'Dominant f = {f_fft:.2f} Hz')
-    ax2.set_title('Frequency Spectrum (FFT)')
-    ax2.set_xlabel('Frequency [Hz]')
-    ax2.set_ylabel('Amplitude')
-    ax2.set_xlim([0, f_fft * 4.0]) # ピークの4倍あたりまで表示
+    ax2.axvline(x=f_lbm, color='orange', linestyle='--', label=f'Peak St = {st_fft:.3f}')
+    ax2.set_title('Frequency Spectrum of Lift ($C_L$)')
+    ax2.set_xlabel('Frequency (LBM inverse steps)')
+    ax2.set_xlim([0, max(f_lbm * 4.0, 0.01)])
     ax2.grid(True, linestyle='--')
     ax2.legend()
     
     plt.tight_layout()
-    plot_path = os.path.join(out_dir, f"Strouhal_Validation_Re{int(target_re)}.png")
+    plot_path = os.path.join(out_dir, f"IBM_Cylinder_Validation_Re{int(target_re)}.png")
     plt.savefig(plot_path, dpi=300)
-    print(f" -> Validation plot saved to: {plot_path}")
-    plt.show()
+    _log.info("Validation plot saved to: %s", plot_path)
+    
+    # plt.show() # バッチ実行時に止まらないようにコメントアウト
 
-def run_cylinder_benchmark(target_re=100.0):
-    print(f"==================================================")
-    print(f" Starting Karman Vortex Validation (Re={target_re})")
-    print(f"==================================================")
+def run_ibm_cylinder_benchmark(target_re=100.0):
     
-    # --- 2D的なカルマン渦を綺麗に出すため、Y方向は薄く設定 ---
-    nx, ny, nz = 128, 4, 512 
-    Lx_p = 0.1
-    D_phys = Lx_p * 0.1  # geometry.py で radius = nx*0.05 なので直径は nx*0.1
-    U_inlet_p = 0.2
+    _log.info(f"\n=== Optimizing for IBM Cylinder (Re = {target_re}) ===")
     
-    # Re = U * D / nu から動粘度を逆算
-    nu_p = (U_inlet_p * D_phys) / target_re
+    # 空間のベース設定
+    nx_base = 100
+    ny_base = 4    # 2D的に解くために薄く設定
+    nz_base = 300
+    Lx_p_val = 0.1
+    D_phys = Lx_p_val * 0.2  # 直径は流路幅(X)の20%
     
-    out_dir = f"results/validation_cylinder_Re{int(target_re)}"
-    
-    run_simulation(
-        benchmark="benchmark_cylinder",
-        out_dir=out_dir,
-        fp_dtype="float32",
-        
-        # 渦の周期を測るため、定常化検知はOFFにして一定時間(15秒)回し切る
-        steady_detection=False,
-        
-        nx=nx, ny=ny, nz=nz,
-        Lx_p=Lx_p,              
-        U_inlet_p=U_inlet_p,
-        u_lbm=0.1,  
-        
-        max_time_p=15.0, 
-        ramp_time_p=1.0, 
-        
-        vis_interval=50, # FFTのサンプリングレートを高めるため細かく保存
-        vti_export_interval=0, particles_inject_per_step=0,
-        
-        sponge_thickness=40.0, # Z=0(出口)の音響波反射を防ぐためON
-        
-        domain_properties={
-            0:  {"nu": nu_p, "k": 0.026, "rho": 1.2, "Cp": 1005.0},
-            10: {"nu": 0.0,  "k": 400.0, "rho": 8960.0, "Cp": 385.0}, 
-            20: {"nu": nu_p, "k": 0.026, "rho": 1.2, "Cp": 1005.0}, 
-            21: {"nu": nu_p, "k": 0.026, "rho": 1.2, "Cp": 1005.0}, 
+    # オプティマイザの設定
+    config_opt = {
+        "fluid": "Air",
+        "temperature_K": 300,
+        "pressure_Pa": 101325,
+        "solid": "Copper", # 今回は剛体として動かないので熱伝導等は不問
+        "fix_cr": True,
+
+        "fixed":{
+            "nx": nx_base,
+            "nu": True,
+            "k_f": True,
+            "rho_f": True,
+            "k_s": True,
+            "L_domain": Lx_p_val,
+            "L_ref": D_phys, # 代表長さを円柱の直径とする
+            "u_lbm": 0.05,   # マッハ数を低く抑えるための安全な設定
         },
-        
-        boundary_conditions={
-            # 上から下(-Z方向)へ風を吹かせる
-            20: {"type": "inlet",  "velocity":[0.0, 0.0, -U_inlet_p], "temperature": 0.0},
-            21: {"type": "outlet"},
-            10: {"type": "adiabatic_wall"}, 
-        }
+
+        "ranges":{
+            "Re":{
+                "min": target_re * 0.8,
+                "max": target_re * 1.2
+            },
+            "tau_f マージン": {"min": 0.01, "max": 2.00}, 
+            "tau_gf マージン": {"min": 0.01, "max": 2.00}, 
+            "tau_gs マージン": {"min": 0.01, "max": 2.00},
+        },
+        "targets": {
+            "Re": {"value": target_re, "weight": 1.0},
+        },
+        "target_regularization": 1,
+        "regularization": 1.0e-3,
+        "maxiter": 30000,
+    }
+
+    result = run_optimize(config_opt)
+    
+    if not result.get("success", False):
+        _log.error("Failed to optimize parameters for Re=%s", target_re)
+        return
+
+    st = result["state"]
+    artifact_parent = os.path.join("results", f"ibm_cylinder_Re{int(target_re)}")
+    run_paths: dict = {}
+    _log.info("Optimization successful. Actual Re: %.2f", st["Re"])
+    _log.info(
+        "Simulation artifacts will be under: %s/<run_subdir>/ (same folder as .log and .npz)",
+        os.path.abspath(artifact_parent),
     )
 
-    csv_path = os.path.join(out_dir, "probe.csv")
-    if not os.path.exists(csv_path):
-        print(f"[ERROR] Probe data not found at {csv_path}")
+    # 円柱の配置位置の計算 (物理座標系)
+    # Zの大きい方(nz-1)から小さい方(0)へ流れる設定なので、上流側(Zが大きい方)に配置
+    Lz_p = Lx_p_val * (nz_base / nx_base)
+    cylinder_z_p = Lz_p * 0.75 
+
+    try:
+        run_simulation(
+            benchmark="validation_channel",  # geometry.py の空チャネル
+            artifact_parent=artifact_parent,
+            paths_out=run_paths,
+            fp_dtype="float32",
+            steady_detection=False, # 波形を取得するため定常検知はオフ
+            state=st, # オプティマイザの計算結果を渡す
+            
+            nx=int(st["nx"]), ny=ny_base, nz=nz_base,  
+            Lx_p=st["L_domain"],                
+            U_inlet_p=st["U"],
+            
+            # カルマン渦の周期を数回とれる程度の十分な時間
+            max_time_p=3.0, 
+            ramp_time_p=0.5,
+            
+            vis_interval=100, 
+            vti_export_interval=0, particles_inject_per_step=0,
+            data_export_interval=0,
+            
+            sponge_thickness=0.0, # 横流れ防止のためオフ(出口が十分遠いため不要)
+            
+            domain_properties={
+                0:  {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]},
+                20: {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]}, 
+                21: {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]}, 
+                10: {"nu": 0.0,      "k": st["k_s"], "rho": st["rho_s"], "Cp": st["Cp_s"]}, 
+            },
+            
+            boundary_conditions={
+                # 上(Z=nz-1)から下(Z=0)へ風を吹かせる
+                20: {"type": "inlet",  "velocity":[0.0, 0.0, -st["u_lbm"]], "temperature": 0.0},
+                21: {"type": "outlet"},
+                10: {"type": "adiabatic_wall"}, 
+            },
+            
+            # ▼ IBM プラグインの呼び出し ▼
+            physics_models={
+                "immersed_boundary": {
+                    "objects": [
+                        {
+                            "shape": "cylinder", 
+                            "radius_p": D_phys / 2.0, 
+                            "center_p": [Lx_p_val * 0.5, 0.0, cylinder_z_p], 
+                            "type": "fixed" # その場で固定
+                        }
+                    ]
+                }
+            }
+        )
+    except Exception as e:
+        _log.error("Simulation error: %s", e)
         return
-        
-    analyze_and_plot_strouhal(csv_path, target_re, U_inlet_p, D_phys, out_dir)
+
+    # シミュレーション終了後、記録された CSV（実行フォルダ＝.log と同階層）から St を解析
+    sim_out_dir = run_paths.get("out_dir")
+    csv_path = run_paths.get("ibm_forces_csv")
+    if not sim_out_dir or not csv_path:
+        _log.error("paths_out に out_dir / ibm_forces_csv が入っていません。run_simulation の戻りを確認してください。")
+        return
+    if not os.path.isfile(csv_path):
+        _log.error("Force CSV not found at %s. Simulation might have failed.", csv_path)
+        return
+    _log.info("Post-processing IBM forces from: %s", csv_path)
+    _log.info("Plots and validation PNG will be written under: %s", sim_out_dir)
+    dx_val = st["dx"]
+    D_lbm_val = D_phys / dx_val
+    analyze_and_plot(csv_path, target_re, st["u_lbm"], D_lbm_val, ny_base, sim_out_dir)
 
 if __name__ == "__main__":
-    # Re=100 と Re=150 の2パターンで検証
-    for re_target in[100.0, 150.0]:
-        run_cylinder_benchmark(target_re=re_target)
+    # トップレベルで共通ロガーをファイルにも出力するように設定
+    configure_logging("ibm_cylinder_run.log")
+    
+    for re_target in [100.0]:
+        run_ibm_cylinder_benchmark(target_re=re_target)

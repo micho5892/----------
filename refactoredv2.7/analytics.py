@@ -201,7 +201,7 @@ class Analytics:
             ]
         )
 
-    def get_local_Nu(self, ctx, k_target):
+    def get_local_Nu(self, ctx, k_target, log_thermal_slice=False):
         pack = self._get_local_Nu_kernel(
             ctx,
             k_target,
@@ -213,14 +213,15 @@ class Analytics:
             self.cfg.T_inlet_p,
         )
         nu = float(pack[0])
-        t_center = float(pack[1])
-        t_fluid_edge = float(pack[2])
-        t_bulk = float(pack[3])
-        t_wall = float(pack[4])
-        q_wall = float(pack[5])
-        _log.info("T_center: %.6f, T_fluid_edge: %.6f", t_center, t_fluid_edge)
-        _log.info("T_bulk: %.6f, T_wall: %.6f", t_bulk, t_wall)
-        _log.info("q_wall_p: %.6e", q_wall)
+        if log_thermal_slice:
+            t_center = float(pack[1])
+            t_fluid_edge = float(pack[2])
+            t_bulk = float(pack[3])
+            t_wall = float(pack[4])
+            q_wall = float(pack[5])
+            _log.info("T_center: %.6f, T_fluid_edge: %.6f", t_center, t_fluid_edge)
+            _log.info("T_bulk: %.6f, T_wall: %.6f", t_bulk, t_wall)
+            _log.info("q_wall_p: %.6e", q_wall)
         return nu
 
     @ti.kernel

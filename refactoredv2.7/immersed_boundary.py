@@ -5,24 +5,106 @@ from lbm_logger import get_logger
 
 _log = get_logger(__name__)
 
+# --- 形状生成ヘルパー関数 ---
+def create_sphere_markers(radius_lbm, center_lbm, num_samples):
+    points = []
+    phi = math.pi * (3. - math.sqrt(5.))
+    for i in range(num_samples):
+        y = 1 - (i / float(num_samples - 1)) * 2 
+        radius_at_y = math.sqrt(1 - y * y)
+        theta = phi * i
+        x = math.cos(theta) * radius_at_y
+        z = math.sin(theta) * radius_at_y
+        points.append([center_lbm[0] + radius_lbm * x, center_lbm[1] + radius_lbm * y, center_lbm[2] + radius_lbm * z])
+    return np.array(points, dtype=np.float32)
 
+def create_cylinder_markers(radius_lbm, center_lbm, ny):
+    """Y方向に貫通する円柱のマーカーを生成 (2D的なシミュレーション用)"""
+    # 円周上の1セルにつき約1.2個のマーカーを配置
+    num_circumference = int(2.0 * np.pi * radius_lbm * 1.2)
+    theta = np.linspace(0, 2*np.pi, num_circumference, endpoint=False)
+    
+    points = []
+    for j in range(ny):
+        for t in theta:
+            x = center_lbm[0] + radius_lbm * np.cos(t)
+            z = center_lbm[2] + radius_lbm * np.sin(t)
+            points.append([x, float(j) + 0.5, z])
+    return np.array(points, dtype=np.float32)
+
+# --- IBM マネージャ ---
 @ti.data_oriented
 class IBManager:
-    def __init__(self, fp_dtype, num_points, mass_lbm, gravity_lbm, dA_lbm):
+    def __init__(self, fp_dtype, objects_data, total_points, dA_lbm):
+        """
+        objects_data: 辞書のリスト。各物体のメタデータを含む
+        """
         self.fp_dtype = fp_dtype
-        self.num_points = num_points
-        self.mass = mass_lbm
-        self.gravity = ti.Vector(gravity_lbm)
-        self.dA = dA_lbm # マーカー1個あたりの表面積 (LBM単位)
+        self.num_points = total_points
+        self.num_objects = len(objects_data)
+        self.dA = dA_lbm
 
-        # ラグランジュ点群
-        self.pos = ti.Vector.field(3, dtype=fp_dtype, shape=num_points)
-        self.vel = ti.Vector.field(3, dtype=fp_dtype, shape=num_points)
-        self.force = ti.Vector.field(3, dtype=fp_dtype, shape=num_points)
+        # 全マーカーのデータ (平坦化された配列)
+        self.pos = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
+        self.vel = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
+        self.force = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
+        self.marker_obj_id = ti.field(dtype=ti.i32, shape=total_points) # 各マーカーが属する物体ID
+
+        # 物体ごとのメタデータ
+        self.obj_type = ti.field(dtype=ti.i32, shape=self.num_objects) # 0: fixed, 1: free, 2: rotating
+        self.obj_mass = ti.field(dtype=fp_dtype, shape=self.num_objects)
+        self.obj_center = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
+        self.obj_vel = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
+        self.obj_omega = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects) # 角速度ベクトル
         
-        self.center = ti.Vector.field(3, dtype=fp_dtype, shape=())
-        self.center_vel = ti.Vector.field(3, dtype=fp_dtype, shape=())
-        _log.debug("IBManager: num_points=%s", num_points)
+        # 力計測用 (毎ステップの抗力・揚力を記録)
+        self.obj_hydro_force = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
+
+        # データの初期化 (Python側からTaichiフィールドへ転送)
+        self._init_data(objects_data)
+        _log.debug("IBManager initialized: %d objects, %d total markers", self.num_objects, self.num_points)
+
+    def _init_data(self, objects_data):
+        pos_np = np.zeros((self.num_points, 3), dtype=np.float32)
+        vel_np = np.zeros((self.num_points, 3), dtype=np.float32)
+        marker_id_np = np.zeros(self.num_points, dtype=np.int32)
+        
+        type_np = np.zeros(self.num_objects, dtype=np.int32)
+        mass_np = np.zeros(self.num_objects, dtype=np.float32)
+        center_np = np.zeros((self.num_objects, 3), dtype=np.float32)
+        vel_obj_np = np.zeros((self.num_objects, 3), dtype=np.float32)
+        omega_np = np.zeros((self.num_objects, 3), dtype=np.float32)
+        
+        current_idx = 0
+        for obj_id, obj in enumerate(objects_data):
+            markers = obj['markers']
+            n_markers = len(markers)
+            
+            pos_np[current_idx : current_idx + n_markers] = markers
+            vel_np[current_idx : current_idx + n_markers] = obj.get('v0', [0,0,0])
+            marker_id_np[current_idx : current_idx + n_markers] = obj_id
+            
+            # タイプ判定
+            t_str = obj.get('type', 'fixed')
+            if t_str == 'fixed': type_np[obj_id] = 0
+            elif t_str == 'free': type_np[obj_id] = 1
+            elif t_str == 'rotating': type_np[obj_id] = 2
+            
+            mass_np[obj_id] = obj.get('mass', 1e9)
+            center_np[obj_id] = obj.get('center', [0,0,0])
+            vel_obj_np[obj_id] = obj.get('v0', [0,0,0])
+            omega_np[obj_id] = obj.get('omega', [0,0,0])
+            
+            current_idx += n_markers
+            
+        self.pos.from_numpy(pos_np)
+        self.vel.from_numpy(vel_np)
+        self.marker_obj_id.from_numpy(marker_id_np)
+        self.obj_type.from_numpy(type_np)
+        self.obj_mass.from_numpy(mass_np)
+        self.obj_center.from_numpy(center_np)
+        self.obj_vel.from_numpy(vel_obj_np)
+        self.obj_omega.from_numpy(omega_np)
 
     @ti.func
     def peskin_delta(self, r):
@@ -34,7 +116,6 @@ class IBManager:
 
     @ti.kernel
     def interp_velocity_and_calc_force(self, ctx: ti.template()):
-        """1. 補間 と 2. Direct Forcing法による力の計算"""
         for p in range(self.num_points):
             p_pos = self.pos[p]
             u_interp = ti.Vector([0.0, 0.0, 0.0])
@@ -53,16 +134,13 @@ class IBManager:
                             weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
                             u_interp += ctx.v[i, j, k] * weight
 
-            # ★ Direct Forcing: 速度差をそのまま必要な力密度とする (dt_lbm = 1.0)
-            # ※係数2.0は、Guoフォーシングでの半ステップ遅れを補正するための安定化ゲイン
             self.force[p] = (self.vel[p] - u_interp) * 2.0
 
     @ti.kernel
     def spread_force(self, ctx: ti.template()):
-        """3. 物体が流体を押す力を分配 (面積 dA を掛ける)"""
         for p in range(self.num_points):
             p_pos = self.pos[p]
-            f_ib = self.force[p] * self.dA # 力密度 × 面積 = 実際の力
+            f_ib = self.force[p] * self.dA
             
             base_i = int(ti.math.floor(p_pos[0]))
             base_j = int(ti.math.floor(p_pos[1]))
@@ -76,37 +154,61 @@ class IBManager:
                             dist_y = p_pos[1] - float(j)
                             dist_z = p_pos[2] - float(k)
                             weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
-                            
                             ctx.F_int[i, j, k] += f_ib * weight
 
     @ti.kernel
-    def update_rigid_body(self):
-        """剛体の運動方程式 (dt_lbm = 1.0)"""
-        total_hydro_force = ti.Vector([0.0, 0.0, 0.0])
-        for p in range(self.num_points):
-            total_hydro_force -= self.force[p] * self.dA # 作用・反作用
+    def update_objects_and_markers(self):
+        # 1. 各物体が受ける流体力を集計
+        for obj_id in range(self.num_objects):
+            self.obj_hydro_force[obj_id] = ti.Vector([0.0, 0.0, 0.0])
             
-        acc = total_hydro_force / self.mass + self.gravity
-        self.center_vel[None] += acc
-        self.center[None] += self.center_vel[None]
-        
         for p in range(self.num_points):
-            self.pos[p] += self.center_vel[None]
-            self.vel[p] = self.center_vel[None]
+            obj_id = self.marker_obj_id[p]
+            # f_ib (マーカーの力) は「流体を押す力」なので、物体が受ける力はその逆(マイナス)
+            self.obj_hydro_force[obj_id] -= self.force[p] * self.dA
+            
+        # 2. 自由運動(Free)オブジェクトの重心運動を更新
+        for obj_id in range(self.num_objects):
+            if self.obj_type[obj_id] == 1: # free
+                acc = self.obj_hydro_force[obj_id] / self.obj_mass[obj_id]
+                # ※重力が必要ならここで足す
+                self.obj_vel[obj_id] += acc
+                self.obj_center[obj_id] += self.obj_vel[obj_id]
+
+        # 3. 各マーカーの座標と速度の更新
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            o_type = self.obj_type[obj_id]
+            
+            if o_type == 0:
+                # 固定 (Fixed): 動かさない、速度ゼロ
+                self.vel[p] = ti.Vector([0.0, 0.0, 0.0])
+                
+            elif o_type == 1:
+                # 自由 (Free): 平行移動のみ (今は回転を省略)
+                self.pos[p] += self.obj_vel[obj_id]
+                self.vel[p] = self.obj_vel[obj_id]
+                
+            elif o_type == 2:
+                # 回転 (Rotating): 指定された omega で強制回転
+                omega = self.obj_omega[obj_id]
+                center = self.obj_center[obj_id]
+                r = self.pos[p] - center
+                
+                # v = omega x r (クロス積)
+                v_rot = ti.Vector([
+                    omega[1]*r[2] - omega[2]*r[1],
+                    omega[2]*r[0] - omega[0]*r[2],
+                    omega[0]*r[1] - omega[1]*r[0]
+                ])
+                self.pos[p] += v_rot
+                self.vel[p] = v_rot
 
     def step(self, ctx):
         self.interp_velocity_and_calc_force(ctx)
         self.spread_force(ctx)
-        self.update_rigid_body()
-
-def create_sphere_markers(radius_lbm, center_lbm, num_samples):
-    points =[]
-    phi = math.pi * (3. - math.sqrt(5.))
-    for i in range(num_samples):
-        y = 1 - (i / float(num_samples - 1)) * 2 
-        radius_at_y = math.sqrt(1 - y * y)
-        theta = phi * i
-        x = math.cos(theta) * radius_at_y
-        z = math.sin(theta) * radius_at_y
-        points.append([center_lbm[0] + radius_lbm * x, center_lbm[1] + radius_lbm * y, center_lbm[2] + radius_lbm * z])
-    return np.array(points, dtype=np.float32)
+        self.update_objects_and_markers()
+        
+    def get_hydro_forces(self):
+        """抗力・揚力計測用に、Python側に力をnumpy配列で返す"""
+        return self.obj_hydro_force.to_numpy()

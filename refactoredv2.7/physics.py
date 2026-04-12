@@ -3,6 +3,8 @@
 # ==========================================================
 import taichi as ti
 import math
+import os
+import csv
 import config
 from context import FLUID_A, INLET, OUTLET, SOLID, SOLID_HEAT_SOURCE, ROTATING_WALL
 from immersed_boundary import IBManager, create_sphere_markers
@@ -135,59 +137,76 @@ class PhysicsManager:
 @ti.data_oriented
 class ImmersedBoundaryModel(PhysicsModel):
     def __init__(self, fp_dtype, cfg):
-        # cfg全体を受け取るように変更
-        p_kwargs = cfg.physics_models["immersed_boundary"]
+        from immersed_boundary import IBManager, create_sphere_markers, create_cylinder_markers
         
-        dx = cfg.dx
-        dt = cfg.dt
+        self.cfg = cfg
+        ibm_cfg = cfg.physics_models.get("immersed_boundary", {})
+        objects_cfg = ibm_cfg.get("objects", [])
         
-        # ユーザーが指定する【物理パラメータ】を取得
-        r_p = p_kwargs.get("radius_p", 0.01)               # 物理半径 [m]
-        center_p = p_kwargs.get("center_p",[0.05, 0.05, 0.08]) # 物理座標 [m]
-        rho_s_p = p_kwargs.get("rho_s_p", 7800.0)          # 剛体の密度 [kg/m^3] (鉄など)
-        g_p = p_kwargs.get("gravity_p",[0.0, 0.0, -9.81]) # 物理重力 [m/s^2]
+        self.dx = cfg.dx
+        self.dt = cfg.dt
         
-        # 流体の物理密度を取得 (デフォルトは空気1.2)
-        rho_f_p = 1.2
-        if 0 in cfg.domain_properties:
-            rho_f_p = cfg.domain_properties[0].get("rho", 1.2)
-
-        # ==========================================================
-        # ★ 全自動・無次元化計算 (LBM単位系への翻訳)
-        # ==========================================================
-        # 1. 長さの変換
-        self.r_lbm = r_p / dx
-        center_lbm = [c / dx for c in center_p]
+        parsed_objects = []
+        total_markers = 0
+        self.dA_lbm = 1.0 
         
-        # 2. 質量の変換 (密度比を使うのがCFDの鉄則)
-        # 物理質量 = 4/3 * pi * r_p^3 * rho_s_p
-        # LBM質量 = LBM体積 * (固体密度 / 流体密度)
-        density_ratio = rho_s_p / rho_f_p
-        self.mass_lbm = (4.0 / 3.0) * math.pi * (self.r_lbm ** 3) * density_ratio
+        for obj in objects_cfg:
+            shape = obj.get("shape", "sphere")
+            r_p = obj.get("radius_p", 0.01)
+            center_p = obj.get("center_p", [0.05, 0.05, 0.08])
+            
+            r_lbm = r_p / self.dx
+            center_lbm = [c / self.dx for c in center_p]
+            
+            if shape == "cylinder":
+                # Y方向貫通円柱
+                markers = create_cylinder_markers(r_lbm, center_lbm, cfg.ny)
+                self.dA_lbm = (2.0 * math.pi * r_lbm * float(cfg.ny)) / len(markers)
+            else:
+                surface_area_lbm = 4.0 * math.pi * (r_lbm ** 2)
+                num_points = int(surface_area_lbm / (0.8 ** 2))
+                markers = create_sphere_markers(r_lbm, center_lbm, num_points)
+                self.dA_lbm = surface_area_lbm / num_points
+            
+            parsed_obj = {
+                "markers": markers,
+                "type": obj.get("type", "fixed"),
+                "mass": 1e9, # 固定なら質量無限大でOK
+                "center": center_lbm,
+                "v0": obj.get("v0_lbm", [0,0,0]),
+                "omega": obj.get("omega_lbm", [0,0,0]),
+            }
+            parsed_objects.append(parsed_obj)
+            total_markers += len(markers)
+            
+        self.ibm = IBManager(fp_dtype, parsed_objects, total_markers, self.dA_lbm)
         
-        # 3. 加速度(重力)の変換: g_lbm = g_p * (dt^2 / dx)
-        self.g_lbm = [g * (dt ** 2) / dx for g in g_p]
+        # --- 毎ステップの力を記録するCSVの準備 ---
+        # cfgに out_dir がなければカレントディレクトリの results フォルダに保存
+        self.out_dir = getattr(cfg, "out_dir", "results")
+        os.makedirs(self.out_dir, exist_ok=True)
+        self.force_log_path = os.path.join(self.out_dir, "ibm_forces.csv")
         
-        # 4. マーカー数の自動計算 (マーカー間隔が約0.8セルになるように配置)
-        surface_area_lbm = 4.0 * math.pi * (self.r_lbm ** 2)
-        self.num_points = int(surface_area_lbm / (0.8 ** 2))
-        self.dA_lbm = surface_area_lbm / self.num_points # 1マーカーあたりの面積
-        
-        _log.info(
-            "[IBM Auto-Scale] Radius(LBM): %.2f cells, Mass(LBM): %.2f, Points: %s",
-            self.r_lbm,
-            self.mass_lbm,
-            self.num_points,
-        )
-        _log.info("[IBM Auto-Scale] Gravity(LBM): %s", self.g_lbm)
-
-        # IBMマネージャーの初期化
-        self.ibm = IBManager(fp_dtype, self.num_points, self.mass_lbm, self.g_lbm, self.dA_lbm)
-        
-        # マーカーを配置
-        points_np = create_sphere_markers(self.r_lbm, center_lbm, self.num_points)
-        self.ibm.pos.from_numpy(points_np)
-        self.ibm.center[None] = center_lbm
+        with open(self.force_log_path, mode='w', newline='') as f:
+            writer = csv.writer(f)
+            header = ["step"]
+            for i in range(len(parsed_objects)):
+                header.extend([f"obj{i}_Fx", f"obj{i}_Fy", f"obj{i}_Fz"])
+            writer.writerow(header)
+            
+        self.step_count = 0
 
     def apply(self, ctx, current_time):
         self.ibm.step(ctx)
+        
+        # パフォーマンスを落とさないよう、10ステップに1回だけCSVへ追記
+        if self.step_count % 10 == 0:
+            forces = self.ibm.get_hydro_forces()
+            with open(self.force_log_path, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                row = [self.step_count]
+                for i in range(forces.shape[0]):
+                    row.extend([forces[i, 0], forces[i, 1], forces[i, 2]])
+                writer.writerow(row)
+                
+        self.step_count += 1

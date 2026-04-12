@@ -1,0 +1,16 @@
+2026-04-12 21:15:40 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 21:15:40 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 21:15:43 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 21:15:43 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 21:15:44 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 21:15:44 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 21:15:44 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 21:15:44 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=0
+2026-04-12 21:15:45 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 21:15:45 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:15:45 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 21:15:45 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:24:41 [DEBUG] lbm.vtk_export: VTI saved: results/ibm_cylinder_Re100\validation_channel_20260412_211543_final.vti
+2026-04-12 21:24:42 [INFO] lbm.export: GIF saved: results/ibm_cylinder_Re100\validation_channel_20260412_211543.gif
+2026-04-12 21:24:42 [ERROR] lbm.__main__: Force CSV not found at results/ibm_cylinder_Re100\ibm_forces.csv. Simulation might have failed.
