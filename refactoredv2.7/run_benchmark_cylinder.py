@@ -124,6 +124,12 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
     nz_base = 400  # 出口までの距離も少し伸ばす
     Lx_p_val = 0.15 # nxに比例して拡大
     D_phys = 0.02   # 円柱の物理直径はそのままキープ (20セル相当)
+
+    nx_base = 200          # 空間の幅をさらに広げる
+    ny_base = 4
+    nz_base = 400
+    Lx_p_val = 0.2         # 空間幅に合わせて物理長も拡大
+    D_phys = Lx_p_val * 0.1 # 円柱直径は流路幅の 10% (これでブロック率が10%に下がる)
     
     # オプティマイザの設定
     config_opt = {
@@ -199,14 +205,14 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
             
             # カルマン渦の周期を数回とれる程度の十分な時間
             max_time_p=300.0, 
-            ramp_time_p=1,
+            ramp_time_p=2,
             
             vis_interval=100, 
             vti_export_interval=0, particles_inject_per_step=0,
             data_export_interval=0,
             
             sponge_thickness=40.0,
-            sponge_strength_decay_start_p=2.0,
+            sponge_strength_decay_start_p=3.0,
             sponge_strength_decay_duration_p=5.0,
             
             domain_properties={

@@ -157,12 +157,12 @@ class IBManager:
                             u_interp += ctx.v[i, j, k] * weight
                             t_interp += ctx.temp[i, j, k] * weight
 
-            self.force[p] = (self.vel[p] - u_interp) * 2.0
+            self.force[p] = (self.vel[p] - u_interp) * 1.0
 
             obj_id = self.marker_obj_id[p]
             if self.obj_is_thermal[obj_id] != 0:
                 # Direct forcing: マーカー目標温度と補間流体温度の差を埋める熱源強度（spread で dA 重み付け）
-                self.marker_q[p] = (self.marker_temp[p] - t_interp) * 2.0
+                self.marker_q[p] = (self.marker_temp[p] - t_interp) * 1.0
             else:
                 self.marker_q[p] = 0.0
 

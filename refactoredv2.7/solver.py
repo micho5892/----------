@@ -301,7 +301,7 @@ class LBMSimulator:
                 ctx.temp[i, j, k] = new_temp
                 ctx.rho[i, j, k] = new_rho
                 if new_rho > 1e-12:
-                    ctx.v[i, j, k] = new_v / new_rho
+                    ctx.v[i, j, k] = new_v / new_rho + ctx.F_int[i, j, k] / (2.0 * new_rho)
                 else:
                     ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
             else:
