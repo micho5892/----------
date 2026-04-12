@@ -72,42 +72,76 @@ def setup_logger(log_file_path):
     
     return logger
 
-class SteadyStateDetector:
-    """流れの定常化（および周期定常化）を自動検知するクラス"""
-    def __init__(self, window_time_p, tolerance, extra_time_p, U_ref, dt):
-        self.window_time_p = window_time_p
+class AsymptoticSteadyDetector:
+    """
+    系の物理量が漸近値（最終的な安定値）に向かう傾向を線形回帰で予測し、
+    定常化までの「残り時間（ETA）」を物理ベースで算出する高度な判定器。
+    """
+    def __init__(self, window_time_p, dt_sample, tolerance):
+        # サンプリング間隔とウィンドウサイズの設定
+        self.dt_sample = dt_sample
+        # 振動（カルマン渦など）を吸収するため、ウィンドウ内のデータ数は最低でも20は確保
+        self.window_size = max(20, int(window_time_p / dt_sample))
         self.tolerance = tolerance
-        self.extra_time_p = extra_time_p
-        self.U_ref = U_ref
-        self.dt = dt
         self.history =[]
         self.is_steady = False
-        self.steady_detected_time_p = None
 
-    def update(self, current_time_p, val):
-        self.history.append((current_time_p, val))
-        cutoff_time = current_time_p - 2.0 * self.window_time_p
-        while self.history and self.history[0][0] < cutoff_time:
+    def update(self, val):
+        self.history.append(val)
+        # 移動平均のためのバッファも含めて過去履歴を保持
+        if len(self.history) > self.window_size * 2:
             self.history.pop(0)
 
-        if not self.is_steady and len(self.history) > 10:
-            dt_hist = self.history[-1][0] - self.history[0][0]
-            if dt_hist >= 1.9 * self.window_time_p:
-                mid_time = current_time_p - self.window_time_p
-                half1 =[v for t, v in self.history if t < mid_time]
-                half2 =[v for t, v in self.history if t >= mid_time]
-                
-                if half1 and half2:
-                    mean1, mean2 = sum(half1) / len(half1), sum(half2) / len(half2)
-                    amp1, amp2 = max(half1) - min(half1), max(half2) - min(half2)
-                    mean_diff = abs(mean1 - mean2) / (self.U_ref * self.dt + 1e-8)
-                    amp_diff = abs(amp1 - amp2) / (self.U_ref * self.dt + 1e-8)
+        if len(self.history) < self.window_size * 2:
+            return False, "Analyzing..."
 
-                    if mean_diff < self.tolerance and amp_diff < self.tolerance:
-                        self.is_steady = True
-                        self.steady_detected_time_p = current_time_p
-                        return True
-        return False
+        # 1. 移動平均（SMA）をかけて微小な振動ノイズや渦の周期変動を取り除く
+        window = self.window_size
+        smoothed = np.convolve(self.history, np.ones(window)/window, mode='valid')
+        
+        # 2. Y(現在値) と dY/dt(変化率) の配列を作成
+        Y = smoothed[:-1]
+        dY = (smoothed[1:] - smoothed[:-1]) / self.dt_sample
+
+        # 3. 最小二乗法（線形回帰）: dY/dt = a * Y + b
+        cov_matrix = np.cov(Y, dY)
+        var_Y = cov_matrix[0, 0]
+        cov_Y_dY = cov_matrix[0, 1]
+
+        # 分散が極めてゼロに近い場合（すでに完全に変化がない場合）
+        if var_Y < 1e-20:
+            self.is_steady = True
+            return True, "Steady"
+
+        a = cov_Y_dY / var_Y
+        b = np.mean(dY) - a * np.mean(Y)
+
+        # 4. 判定ロジック
+        if a >= -1e-6:
+            # a が正またはゼロに近い = まだ直線的に成長中で予測不可能
+            return False, "Developing..."
+
+        # 漸近予測が有効な場合
+        tau = -1.0 / a            # 時定数（収束の速さ）
+        Y_inf = -b / a            # 最終的に落ち着く予測値 (漸近値)
+        Y_current = smoothed[-1]  # 現在の平滑化値
+
+        # 現在値から漸近値までの残り距離
+        diff = abs(Y_current - Y_inf)
+        # 許容されるブレ幅（目標値の tolerance %）
+        threshold = max(abs(Y_inf) * self.tolerance, 1e-12)
+
+        if diff <= threshold:
+            # 許容誤差内に飛び込んだら定常とみなす
+            self.is_steady = True
+            return True, "Steady"
+        
+        # 5. 到達までの残り時間（ETA）の逆算
+        # 指数関数減衰の式: diff(t) = diff_0 * exp(-t/tau) を t について解く
+        ratio = diff / threshold
+        eta_p = tau * np.log(ratio)
+
+        return False, f"ETA:{eta_p:.1f}s"
 
     def should_stop(self, current_time_p):
         if self.is_steady and self.steady_detected_time_p is not None:
@@ -239,10 +273,9 @@ def run_simulation(**kwargs):
     )
 
     if steady_detection:
-        # 速度用の判定器 (基準は入口流速)
-        detector_v = SteadyStateDetector(steady_window_p, steady_tolerance, steady_extra_p, cfg.U_inlet_p, cfg.dt)
-        # 温度用の判定器 (基準は入口の最大温度差: 約1.0)
-        detector_t = SteadyStateDetector(steady_window_p, steady_tolerance, steady_extra_p, 1.0, cfg.dt)
+        dt_sample = cfg.dt * cfg.vis_interval  # updateを呼ぶ実時間間隔
+        detector_v = AsymptoticSteadyDetector(steady_window_p, dt_sample, steady_tolerance)
+        detector_t = AsymptoticSteadyDetector(steady_window_p, dt_sample, steady_tolerance)
     else:
         detector_v = None
         detector_t = None
@@ -310,10 +343,17 @@ def run_simulation(**kwargs):
             monitor_name = ""
 
             if benchmark == "parallel_plates":
-                k_target = int(cfg.nz * 0.1)
-                monitor_val_v = analytics.get_local_Nu(ctx, k_target)
-                monitor_val_t = temp_np[cfg.nx//2, cfg.ny//2, k_target]
-                monitor_name = f"Nu={monitor_val_v:.2f} | T={monitor_val_t:.3f}"
+                k_target = int(cfg.nz * 0.15)
+                local_nu = analytics.get_local_Nu(ctx, k_target)
+                local_t = temp_np[cfg.nx//2, cfg.ny//2, k_target]
+                
+                # ▼ 判定には局所値ではなく、領域全体の全エネルギーハッシュを使う
+                global_hash = analytics.compute_global_hash(ctx)
+                monitor_val_v = global_hash[0]
+                monitor_val_t = global_hash[1]
+                
+                # ログの表示用にはNu数と温度を残す
+                monitor_name = f"Nu={local_nu:.2f} | T={local_t:.3f}"
             elif benchmark == "cavity":
                 cx, cy, cz = cfg.nx//2, cfg.ny//2, cfg.nz//2
                 monitor_val_v = (v_np[cx, cy, cz, 0]**2 + v_np[cx, cy, cz, 2]**2)**0.5
@@ -353,10 +393,18 @@ def run_simulation(**kwargs):
             eta_sec = (elapsed_wall / (current_time_p + 1e-12)) * rem_time_p
             eta_str = format_eta(eta_sec)
 
-            # ステータスの表示 (速度と温度の判定状況を V:OK T:Wait のように表示)
-            status_v = "OK" if (detector_v and detector_v.is_steady) else "Wait"
-            status_t = "OK" if (detector_t and detector_t.is_steady) else "Wait"
-            status_str = f"[V:{status_v} T:{status_t}]" if detector_v else "[MaxTime]"
+            if detector_v is not None and detector_t is not None:
+                is_v_steady, msg_v = detector_v.update(monitor_val_v)
+                is_t_steady, msg_t = detector_t.update(monitor_val_t)
+                
+                status_str = f"[V:{msg_v} T:{msg_t}]"
+                
+                if is_v_steady and is_t_steady and global_steady_time_p is None:
+                    global_steady_time_p = current_time_p
+                    logger.info(f"[SUCCESS] Flow AND Thermal steady state detected at t = {current_time_p:.3f} s!")
+                    logger.info(f"[INFO] Simulation will continue for another {steady_extra_p:.3f} s to record data.")
+            else:
+                status_str = "[MaxTime]"
 
             # ==========================================================
             # ★追加：カルマン渦検証用のポイントプローブ (時系列データの保存)

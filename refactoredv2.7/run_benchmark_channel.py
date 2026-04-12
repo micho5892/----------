@@ -321,7 +321,7 @@ def run_channel_benchmark(artifact_parent=None):
         Lx_p=Lx_p,
         U_inlet_p=U_inlet_p,
         
-        max_time_p=90.0,  
+        max_time_p=240.0,  
         ramp_time_p=1.0,  # 衝撃波を防ぐためソフトスタート
         
         vis_interval=100, 
