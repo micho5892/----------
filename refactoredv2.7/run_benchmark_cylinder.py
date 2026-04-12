@@ -118,6 +118,12 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
     nz_base = 300
     Lx_p_val = 0.1
     D_phys = Lx_p_val * 0.2  # 直径は流路幅(X)の20%
+
+    nx_base = 150  # 100から150に拡大 (隣の渦との干渉を防ぐため)
+    ny_base = 4    
+    nz_base = 400  # 出口までの距離も少し伸ばす
+    Lx_p_val = 0.15 # nxに比例して拡大
+    D_phys = 0.02   # 円柱の物理直径はそのままキープ (20セル相当)
     
     # オプティマイザの設定
     config_opt = {
@@ -177,39 +183,42 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
 
     try:
         run_simulation(
-            benchmark="validation_channel",  # geometry.py の空チャネル
+            benchmark="empty_domain",  # geometry.py の空チャネル
             artifact_parent=artifact_parent,
             paths_out=run_paths,
             fp_dtype="float32",
             steady_detection=False, # 波形を取得するため定常検知はオフ
             state=st, # オプティマイザの計算結果を渡す
+            periodic_x=True,
+            periodic_y=True,
+            periodic_z=False,
             
             nx=int(st["nx"]), ny=ny_base, nz=nz_base,  
             Lx_p=st["L_domain"],                
             U_inlet_p=st["U"],
             
             # カルマン渦の周期を数回とれる程度の十分な時間
-            max_time_p=3.0, 
-            ramp_time_p=0.5,
+            max_time_p=300.0, 
+            ramp_time_p=1,
             
             vis_interval=100, 
             vti_export_interval=0, particles_inject_per_step=0,
             data_export_interval=0,
             
-            sponge_thickness=0.0, # 横流れ防止のためオフ(出口が十分遠いため不要)
+            sponge_thickness=40.0,
+            sponge_strength_decay_start_p=2.0,
+            sponge_strength_decay_duration_p=5.0,
             
             domain_properties={
                 0:  {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]},
                 20: {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]}, 
                 21: {"nu": st["nu"], "k": st["k_f"], "rho": st["rho_f"], "Cp": st["Cp_f"]}, 
-                10: {"nu": 0.0,      "k": st["k_s"], "rho": st["rho_s"], "Cp": st["Cp_s"]}, 
             },
             
             boundary_conditions={
                 # 上(Z=nz-1)から下(Z=0)へ風を吹かせる
                 20: {"type": "inlet",  "velocity":[0.0, 0.0, -st["u_lbm"]], "temperature": 0.0},
                 21: {"type": "outlet"},
-                10: {"type": "adiabatic_wall"}, 
             },
             
             # ▼ IBM プラグインの呼び出し ▼
@@ -217,10 +226,12 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
                 "immersed_boundary": {
                     "objects": [
                         {
-                            "shape": "cylinder", 
-                            "radius_p": D_phys / 2.0, 
-                            "center_p": [Lx_p_val * 0.5, 0.0, cylinder_z_p], 
-                            "type": "fixed" # その場で固定
+                            "shape": "cylinder",
+                            "radius_p": D_phys / 2.0,
+                            "center_p": [Lx_p_val * 0.51, 0.0, cylinder_z_p],
+                            "type": "fixed",  # その場で固定
+                            "temperature": 1.0  # 無次元の目標温度（境界の無次元温度と整合させる）
+                            # Thermal IBM: 無次元目標温度を指定すると ctx.S_g へ熱源が載る（例 "temperature": 1.0）
                         }
                     ]
                 }

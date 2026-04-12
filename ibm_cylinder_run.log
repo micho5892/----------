@@ -14,3 +14,343 @@
 2026-04-12 21:24:41 [DEBUG] lbm.vtk_export: VTI saved: results/ibm_cylinder_Re100\validation_channel_20260412_211543_final.vti
 2026-04-12 21:24:42 [INFO] lbm.export: GIF saved: results/ibm_cylinder_Re100\validation_channel_20260412_211543.gif
 2026-04-12 21:24:42 [ERROR] lbm.__main__: Force CSV not found at results/ibm_cylinder_Re100\ibm_forces.csv. Simulation might have failed.
+2026-04-12 21:33:21 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 21:33:21 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 21:33:21 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 21:33:22 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 21:33:22 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 21:33:22 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 21:33:22 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 21:33:22 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 21:33:22 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=0
+2026-04-12 21:33:23 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 21:33:23 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:33:23 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 21:33:23 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:33:49 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_213322\validation_channel_20260412_213322_final.vti
+2026-04-12 21:33:49 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_213322\validation_channel_20260412_213322.gif
+2026-04-12 21:33:49 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_213322\ibm_forces.csv
+2026-04-12 21:33:49 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_213322
+2026-04-12 21:33:49 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_213322\ibm_forces.csv
+2026-04-12 21:33:49 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:33:49 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 21:33:49 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:33:49 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 0.0004  (Target: ~1.34)
+2026-04-12 21:33:49 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0010  (Target: ~±0.3)
+2026-04-12 21:33:49 [INFO] lbm.__main__:  Strouhal Number       (St)  : 1.1814  (Target: ~0.165)
+2026-04-12 21:33:50 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_213322\IBM_Cylinder_Validation_Re100.png
+2026-04-12 21:41:21 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 21:41:21 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 21:41:21 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 21:41:22 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 21:41:22 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 21:41:22 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 21:41:22 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 21:41:22 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 21:41:22 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=0
+2026-04-12 21:41:22 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 21:41:22 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:41:22 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 21:41:22 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:41:49 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_214122\validation_channel_20260412_214122_final.vti
+2026-04-12 21:41:49 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_214122\validation_channel_20260412_214122.gif
+2026-04-12 21:41:49 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_214122\ibm_forces.csv
+2026-04-12 21:41:49 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_214122
+2026-04-12 21:41:49 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_214122\ibm_forces.csv
+2026-04-12 21:41:49 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:41:49 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 21:41:49 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:41:49 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 144.4984  (Target: ~1.34)
+2026-04-12 21:41:49 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0001  (Target: ~±0.3)
+2026-04-12 21:41:49 [INFO] lbm.__main__:  Strouhal Number       (St)  : 1.3502  (Target: ~0.165)
+2026-04-12 21:41:50 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_214122\IBM_Cylinder_Validation_Re100.png
+2026-04-12 21:43:34 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 21:43:34 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 21:43:34 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 21:43:35 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 21:43:35 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 21:43:35 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 21:43:35 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 21:43:35 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 21:43:35 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 21:43:35 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 21:43:35 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:43:35 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 21:43:35 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:44:02 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_214335\validation_channel_20260412_214335_final.vti
+2026-04-12 21:44:02 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_214335\validation_channel_20260412_214335.gif
+2026-04-12 21:44:02 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_214335\ibm_forces.csv
+2026-04-12 21:44:02 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_214335
+2026-04-12 21:44:02 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_214335\ibm_forces.csv
+2026-04-12 21:44:02 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:44:02 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 21:44:02 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:44:02 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 144.4984  (Target: ~1.34)
+2026-04-12 21:44:02 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0001  (Target: ~±0.3)
+2026-04-12 21:44:02 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.1688  (Target: ~0.165)
+2026-04-12 21:44:02 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_214335\IBM_Cylinder_Validation_Re100.png
+2026-04-12 21:46:02 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 21:46:02 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 21:46:02 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 21:46:03 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 21:46:03 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 21:46:03 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 21:46:03 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 21:46:03 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 21:46:03 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 21:46:03 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 21:46:03 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:46:03 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 21:46:03 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 21:54:25 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_214603\validation_channel_20260412_214603_final.vti
+2026-04-12 21:54:25 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_214603\validation_channel_20260412_214603.gif
+2026-04-12 21:54:26 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_214603\ibm_forces.csv
+2026-04-12 21:54:26 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_214603
+2026-04-12 21:54:26 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_214603\ibm_forces.csv
+2026-04-12 21:54:26 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:54:26 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 21:54:26 [INFO] lbm.__main__: ==================================================
+2026-04-12 21:54:26 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 150.5963  (Target: ~1.34)
+2026-04-12 21:54:26 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0001  (Target: ~±0.3)
+2026-04-12 21:54:26 [INFO] lbm.__main__:  Strouhal Number       (St)  : 3.2487  (Target: ~0.165)
+2026-04-12 21:54:26 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_214603\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:01:08 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:01:08 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:01:08 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:01:09 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:01:09 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:01:09 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:01:09 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:01:09 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:01:09 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:01:10 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:01:10 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:01:10 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:01:10 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:01:44 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_220109\validation_channel_20260412_220109_final.vti
+2026-04-12 22:01:44 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_220109\validation_channel_20260412_220109.gif
+2026-04-12 22:01:44 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_220109\ibm_forces.csv
+2026-04-12 22:01:44 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_220109
+2026-04-12 22:01:44 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_220109\ibm_forces.csv
+2026-04-12 22:01:44 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:01:44 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:01:44 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:01:44 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 150.5963  (Target: ~1.34)
+2026-04-12 22:01:44 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0001  (Target: ~±0.3)
+2026-04-12 22:01:44 [INFO] lbm.__main__:  Strouhal Number       (St)  : 1.2183  (Target: ~0.165)
+2026-04-12 22:01:45 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_220109\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:03:36 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:03:36 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:03:36 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:03:37 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:03:37 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:03:37 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:03:37 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:03:37 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:03:37 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:03:38 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:03:38 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:03:38 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:03:38 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:04:09 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_220337\validation_channel_20260412_220337_final.vti
+2026-04-12 22:04:10 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_220337\validation_channel_20260412_220337.gif
+2026-04-12 22:04:10 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_220337\ibm_forces.csv
+2026-04-12 22:04:10 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_220337
+2026-04-12 22:04:10 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_220337\ibm_forces.csv
+2026-04-12 22:04:10 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:04:10 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:04:10 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:04:10 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 0.0000  (Target: ~1.34)
+2026-04-12 22:04:10 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0000  (Target: ~±0.3)
+2026-04-12 22:04:10 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.0000  (Target: ~0.165)
+2026-04-12 22:04:10 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_220337\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:09:19 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:09:19 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:09:19 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:09:20 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:09:20 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:09:20 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:09:20 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:09:20 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:09:20 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:09:20 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:09:20 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:09:20 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:09:20 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:09:52 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_220920\validation_channel_20260412_220920_final.vti
+2026-04-12 22:09:53 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_220920\validation_channel_20260412_220920.gif
+2026-04-12 22:09:53 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_220920\ibm_forces.csv
+2026-04-12 22:09:53 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_220920
+2026-04-12 22:09:53 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_220920\ibm_forces.csv
+2026-04-12 22:09:53 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:09:53 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:09:53 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:09:53 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 150.8071  (Target: ~1.34)
+2026-04-12 22:09:53 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0102  (Target: ~±0.3)
+2026-04-12 22:09:53 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.1015  (Target: ~0.165)
+2026-04-12 22:09:53 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_220920\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:12:13 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:12:13 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:12:13 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:12:14 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:12:14 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:12:14 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:12:15 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:12:15 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:12:15 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:12:15 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:12:15 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:12:15 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:12:15 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:20:21 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_221214\validation_channel_20260412_221214_final.vti
+2026-04-12 22:20:22 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_221214\validation_channel_20260412_221214.gif
+2026-04-12 22:20:22 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_221214\ibm_forces.csv
+2026-04-12 22:20:22 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_221214
+2026-04-12 22:20:22 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_221214\ibm_forces.csv
+2026-04-12 22:20:22 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:20:22 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:20:22 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:20:22 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 55.2849  (Target: ~1.34)
+2026-04-12 22:20:22 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.9231  (Target: ~±0.3)
+2026-04-12 22:20:22 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.2030  (Target: ~0.165)
+2026-04-12 22:20:23 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_221214\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:23:25 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:23:25 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:23:25 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:23:27 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:23:27 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:23:28 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:23:28 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:23:28 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:23:28 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:23:28 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:23:28 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:23:28 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:23:28 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:23:46 [ERROR] lbm.__main__: Simulation error: AsymptoticSteadyDetector.update() takes 2 positional arguments but 3 were given
+2026-04-12 22:27:24 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:27:25 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:27:25 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:27:25 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:27:25 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:27:26 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:27:26 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:27:26 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:27:26 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:27:26 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:27:26 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:27:26 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:27:26 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:27:57 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_222725\validation_channel_20260412_222725_final.vti
+2026-04-12 22:27:58 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_222725\validation_channel_20260412_222725.gif
+2026-04-12 22:27:58 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_222725\ibm_forces.csv
+2026-04-12 22:27:58 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_222725
+2026-04-12 22:27:58 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_222725\ibm_forces.csv
+2026-04-12 22:27:58 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:27:58 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:27:58 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:27:58 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 60.8226  (Target: ~1.34)
+2026-04-12 22:27:58 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.6149  (Target: ~±0.3)
+2026-04-12 22:27:58 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.2266  (Target: ~0.165)
+2026-04-12 22:27:58 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_222725\IBM_Cylinder_Validation_Re100.png
+2026-04-12 22:29:12 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 22:29:12 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 22:29:12 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 22:29:13 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 22:29:13 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 22:29:13 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 22:29:13 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 22:29:13 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 22:29:13 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 22:29:13 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 22:29:13 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:29:13 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 22:29:13 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 22:58:24 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_222913\validation_channel_20260412_222913_final.vti
+2026-04-12 22:59:03 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_222913\validation_channel_20260412_222913.gif
+2026-04-12 22:59:05 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_222913\ibm_forces.csv
+2026-04-12 22:59:05 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_222913
+2026-04-12 22:59:05 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_222913\ibm_forces.csv
+2026-04-12 22:59:05 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:59:05 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 22:59:05 [INFO] lbm.__main__: ==================================================
+2026-04-12 22:59:05 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 56.4936  (Target: ~1.34)
+2026-04-12 22:59:05 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0010  (Target: ~±0.3)
+2026-04-12 22:59:05 [INFO] lbm.__main__:  Strouhal Number       (St)  : 2.9258  (Target: ~0.165)
+2026-04-12 22:59:05 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_222913\IBM_Cylinder_Validation_Re100.png
+2026-04-12 23:17:40 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 23:17:40 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 23:17:40 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 23:17:41 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 23:17:41 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 23:17:41 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 23:17:42 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 23:17:42 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 23:17:42 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 23:17:42 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 23:17:42 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 23:17:42 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 23:17:42 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 23:32:51 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_231741\validation_channel_20260412_231741_final.vti
+2026-04-12 23:33:09 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_231741\validation_channel_20260412_231741.gif
+2026-04-12 23:33:11 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_231741\ibm_forces.csv
+2026-04-12 23:33:11 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_231741
+2026-04-12 23:33:11 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_231741\ibm_forces.csv
+2026-04-12 23:33:11 [INFO] lbm.__main__: ==================================================
+2026-04-12 23:33:11 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 23:33:11 [INFO] lbm.__main__: ==================================================
+2026-04-12 23:33:11 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 56.4936  (Target: ~1.34)
+2026-04-12 23:33:11 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0008  (Target: ~±0.3)
+2026-04-12 23:33:11 [INFO] lbm.__main__:  Strouhal Number       (St)  : 2.9266  (Target: ~0.165)
+2026-04-12 23:33:11 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_231741\IBM_Cylinder_Validation_Re100.png
+2026-04-12 23:35:51 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-12 23:35:51 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-12 23:35:51 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-12 23:35:52 [DEBUG] lbm.config: SimConfig: benchmark=validation_channel grid=100x4x300
+2026-04-12 23:35:52 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-12 23:35:52 [DEBUG] lbm.geometry: Geometry: validation_channel (100 x 4 x 300)
+2026-04-12 23:35:52 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-12 23:35:52 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-12 23:35:52 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=1
+2026-04-12 23:35:52 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-12 23:35:52 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 23:35:52 [DEBUG] lbm.nu_models: build_nu_model: benchmark=validation_channel
+2026-04-12 23:35:52 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-12 23:51:01 [DEBUG] lbm.vtk_export: VTI saved: results\ibm_cylinder_Re100\validation_channel_20260412_233552\validation_channel_20260412_233552_final.vti
+2026-04-12 23:51:19 [INFO] lbm.export: GIF saved: results\ibm_cylinder_Re100\validation_channel_20260412_233552\validation_channel_20260412_233552.gif
+2026-04-12 23:51:20 [INFO] lbm.__main__: Post-processing IBM forces from: results\ibm_cylinder_Re100\validation_channel_20260412_233552\ibm_forces.csv
+2026-04-12 23:51:20 [INFO] lbm.__main__: Plots and validation PNG will be written under: results\ibm_cylinder_Re100\validation_channel_20260412_233552
+2026-04-12 23:51:20 [INFO] lbm.__main__: Analyzing IBM force data from: results\ibm_cylinder_Re100\validation_channel_20260412_233552\ibm_forces.csv
+2026-04-12 23:51:20 [INFO] lbm.__main__: ==================================================
+2026-04-12 23:51:20 [INFO] lbm.__main__:  IBM Cylinder Benchmark (Re = 100.0) Results
+2026-04-12 23:51:20 [INFO] lbm.__main__: ==================================================
+2026-04-12 23:51:20 [INFO] lbm.__main__:  Mean Drag Coefficient (C_D) : 56.1570  (Target: ~1.34)
+2026-04-12 23:51:20 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0007  (Target: ~±0.3)
+2026-04-12 23:51:20 [INFO] lbm.__main__:  Strouhal Number       (St)  : 1.5523  (Target: ~0.165)
+2026-04-12 23:51:21 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\validation_channel_20260412_233552\IBM_Cylinder_Validation_Re100.png
+2026-04-13 00:10:33 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-13 00:10:33 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-13 00:10:33 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-13 00:10:34 [DEBUG] lbm.config: SimConfig: benchmark=empty_domain grid=100x4x300
+2026-04-13 00:10:34 [DEBUG] lbm.context: SimulationContext: grid 100 x 4 x 300
+2026-04-13 00:10:34 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-13 00:10:34 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-13 00:10:34 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=0
+2026-04-13 00:10:34 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 300 total markers
+2026-04-13 00:10:34 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)
+2026-04-13 00:10:34 [DEBUG] lbm.nu_models: build_nu_model: benchmark=empty_domain
+2026-04-13 00:10:34 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=100 ny=4)

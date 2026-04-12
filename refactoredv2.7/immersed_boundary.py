@@ -60,6 +60,12 @@ class IBManager:
         # 力計測用 (毎ステップの抗力・揚力を記録)
         self.obj_hydro_force = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
 
+        #  温度場 (Thermal IBM) 用のフィールド
+        self.marker_temp = ti.field(dtype=fp_dtype, shape=total_points)     # 各マーカーの目標温度
+        self.marker_q = ti.field(dtype=fp_dtype, shape=total_points)        # 各マーカーが流体に与える熱量(Q)
+        self.obj_temp = ti.field(dtype=fp_dtype, shape=self.num_objects)    # 各物体の設定温度
+        self.obj_is_thermal = ti.field(dtype=ti.i32, shape=self.num_objects)# 1なら熱源として機能
+
         # データの初期化 (Python側からTaichiフィールドへ転送)
         self._init_data(objects_data)
         _log.debug("IBManager initialized: %d objects, %d total markers", self.num_objects, self.num_points)
@@ -74,11 +80,23 @@ class IBManager:
         center_np = np.zeros((self.num_objects, 3), dtype=np.float32)
         vel_obj_np = np.zeros((self.num_objects, 3), dtype=np.float32)
         omega_np = np.zeros((self.num_objects, 3), dtype=np.float32)
+
+        temp_obj_np = np.zeros(self.num_objects, dtype=np.float32)
+        is_thermal_np = np.zeros(self.num_objects, dtype=np.int32)
+        marker_temp_np = np.zeros(self.num_points, dtype=np.float32)
         
         current_idx = 0
         for obj_id, obj in enumerate(objects_data):
             markers = obj['markers']
             n_markers = len(markers)
+
+            # ▼ 追加: 温度設定の読み込み
+            if "temperature" in obj:
+                temp_obj_np[obj_id] = float(obj["temperature"])
+                is_thermal_np[obj_id] = 1
+                marker_temp_np[current_idx : current_idx + n_markers] = float(obj["temperature"])
+            else:
+                is_thermal_np[obj_id] = 0 # 熱源ではない(断熱)
             
             pos_np[current_idx : current_idx + n_markers] = markers
             vel_np[current_idx : current_idx + n_markers] = obj.get('v0', [0,0,0])
@@ -105,6 +123,9 @@ class IBManager:
         self.obj_center.from_numpy(center_np)
         self.obj_vel.from_numpy(vel_obj_np)
         self.obj_omega.from_numpy(omega_np)
+        self.obj_temp.from_numpy(temp_obj_np)
+        self.obj_is_thermal.from_numpy(is_thermal_np)
+        self.marker_temp.from_numpy(marker_temp_np)
 
     @ti.func
     def peskin_delta(self, r):
@@ -119,11 +140,12 @@ class IBManager:
         for p in range(self.num_points):
             p_pos = self.pos[p]
             u_interp = ti.Vector([0.0, 0.0, 0.0])
-            
+            t_interp = 0.0
+
             base_i = int(ti.math.floor(p_pos[0]))
             base_j = int(ti.math.floor(p_pos[1]))
             base_k = int(ti.math.floor(p_pos[2]))
-            
+
             for i in range(base_i - 1, base_i + 3):
                 for j in range(base_j - 1, base_j + 3):
                     for k in range(base_k - 1, base_k + 3):
@@ -133,19 +155,28 @@ class IBManager:
                             dist_z = p_pos[2] - float(k)
                             weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
                             u_interp += ctx.v[i, j, k] * weight
+                            t_interp += ctx.temp[i, j, k] * weight
 
             self.force[p] = (self.vel[p] - u_interp) * 2.0
+
+            obj_id = self.marker_obj_id[p]
+            if self.obj_is_thermal[obj_id] != 0:
+                # Direct forcing: マーカー目標温度と補間流体温度の差を埋める熱源強度（spread で dA 重み付け）
+                self.marker_q[p] = (self.marker_temp[p] - t_interp) * 2.0
+            else:
+                self.marker_q[p] = 0.0
 
     @ti.kernel
     def spread_force(self, ctx: ti.template()):
         for p in range(self.num_points):
             p_pos = self.pos[p]
             f_ib = self.force[p] * self.dA
-            
+            q_ib = self.marker_q[p] * self.dA
+
             base_i = int(ti.math.floor(p_pos[0]))
             base_j = int(ti.math.floor(p_pos[1]))
             base_k = int(ti.math.floor(p_pos[2]))
-            
+
             for i in range(base_i - 1, base_i + 3):
                 for j in range(base_j - 1, base_j + 3):
                     for k in range(base_k - 1, base_k + 3):
@@ -155,6 +186,9 @@ class IBManager:
                             dist_z = p_pos[2] - float(k)
                             weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
                             ctx.F_int[i, j, k] += f_ib * weight
+                            cid = ctx.cell_id[i, j, k]
+                            if ctx.is_fluid_table[cid] == 1:
+                                ti.atomic_add(ctx.S_g[i, j, k], q_ib * weight)
 
     @ti.kernel
     def update_objects_and_markers(self):

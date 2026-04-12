@@ -1,6 +1,7 @@
 # ==========================================================
 # config.py — SimConfig、materials_dict・境界条件の ID ベース管理
 # ==========================================================
+import math
 import taichi as ti
 from context import FLUID_A, INLET, OUTLET, SOLID, SOLID_HEAT_SOURCE
 from lbm_logger import get_logger
@@ -24,6 +25,10 @@ class SimConfig:
         self.Lx_p = kwargs.get('Lx_p', 0.1)
         self.dx = self.Lx_p / self.nx
         self.sponge_thickness = kwargs.get('sponge_thickness', 0.0)
+        # スポンジ「強度」の時間減衰（セル厚 sponge_thickness は固定のまま）
+        # duration<=0 なら従来どおり常に全強度。>0 なら [start, start+duration] で振幅 1→0（半周期コサイン）
+        self.sponge_strength_decay_start_p = float(kwargs.get('sponge_strength_decay_start_p', 0.0))
+        self.sponge_strength_decay_duration_p = float(kwargs.get('sponge_strength_decay_duration_p', 0.0))
 
         self.steps = kwargs.get('steps', 600)
         self.vis_interval = kwargs.get('vis_interval', 20)
@@ -96,6 +101,18 @@ class SimConfig:
             self.ny,
             self.nz,
         )
+
+    def sponge_strength_amp(self, time_p: float) -> float:
+        """collide_and_stream 内スポンジ粘性ブーストの全体倍率 [0, 1]。"""
+        dur = self.sponge_strength_decay_duration_p
+        if dur <= 0.0:
+            return 1.0
+        t = float(time_p) - self.sponge_strength_decay_start_p
+        if t <= 0.0:
+            return 1.0
+        if t >= dur:
+            return 0.0
+        return 0.5 * (1.0 + math.cos(math.pi * t / dur))
 
     def get_materials_dict(self):
         """設定された各IDの物性から、独立して tau_f, tau_g を計算してテーブルに登録する"""

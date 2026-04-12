@@ -61,8 +61,8 @@ class LBMSimulator:
             ctx.particle_pos[n] = ti.Vector([ti.random() * ctx.nx, ti.random() * ctx.ny, ti.random() * ctx.nz])
 
     @ti.kernel
-    def collide_and_stream(self, ctx: ti.template(), omega_scale: ti.f32):
-        sponge_thickness = float(self.cfg.sponge_thickness) 
+    def collide_and_stream(self, ctx: ti.template(), omega_scale: ti.f32, sponge_amp: ti.f32):
+        sponge_thickness = float(self.cfg.sponge_thickness)
         cs2 = 1.0 / 3.0
         coeff = 4.5
 
@@ -129,7 +129,7 @@ class LBMSimulator:
                 dist_to_zn = float(ctx.nz - 1 - k)
                 min_dist = ti.math.min(dist_to_z0, dist_to_zn)
                 
-                if sponge_thickness > 0.0:
+                if sponge_thickness > 0.0 and sponge_amp > 0.0:
                     dist_to_z0 = float(k)
                     dist_to_zn = float(ctx.nz - 1 - k)
                     min_dist = ti.math.min(dist_to_z0, dist_to_zn)
@@ -137,7 +137,8 @@ class LBMSimulator:
                     if min_dist < sponge_thickness:
                         factor = min_dist / (sponge_thickness + 1e-7)
                         fade = 0.5 * (1.0 - ti.math.cos(ti.math.pi * factor))
-                        tau_sponge = tau_f + (5.0 - tau_f) * (1.0 - fade)
+                        # 空間プロファイルは従来どおり (1-fade)。時間で sponge_amp を掛けて強度のみ弱める
+                        tau_sponge = tau_f + (5.0 - tau_f) * (1.0 - fade) * sponge_amp
                         omega_f = 1.0 / tau_sponge
                 
                 Pi_xx = 0.0; Pi_yy = 0.0; Pi_zz = 0.0

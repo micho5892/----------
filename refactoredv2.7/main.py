@@ -319,7 +319,8 @@ def run_simulation(**kwargs):
         physics_manager.apply_all(ctx, current_time_p)
 
         # 回転壁にも soft-start を掛けるため ramp_factor を渡す
-        sim.collide_and_stream(ctx, ramp_factor)
+        sponge_amp = float(cfg.sponge_strength_amp(current_time_p))
+        sim.collide_and_stream(ctx, ramp_factor, sponge_amp)
         
         bc_manager.apply_all_before_macro(ctx, ramp_factor)
         sim.update_macro(ctx)
@@ -384,17 +385,6 @@ def run_simulation(**kwargs):
                 monitor_name = f"KE={monitor_val_v:.2e} | TE={monitor_val_t:.2e}"
             elif benchmark == "rotating_cylinder":
                 pass
-
-
-            if detector_v is not None and detector_t is not None:
-                detector_v.update(current_time_p, monitor_val_v)
-                detector_t.update(current_time_p, monitor_val_t)
-                
-                # 速度と温度の【両方】が定常状態に達したかをチェック
-                if detector_v.is_steady and detector_t.is_steady and global_steady_time_p is None:
-                    global_steady_time_p = current_time_p
-                    logger.info(f"[SUCCESS] Flow AND Thermal steady state detected at t = {current_time_p:.3f} s!")
-                    logger.info(f"[INFO] Simulation will continue for another {steady_extra_p:.3f} s to record data.")
 
             elapsed_wall = time.time() - start_wall_time
             target_time_p = max_time_p

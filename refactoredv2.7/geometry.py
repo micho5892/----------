@@ -37,6 +37,13 @@ class GeometryBuilder:
             if i < 10 or i > (nx - 10):
                 cell_id[i, j, k] = SOLID
                 sdf[i, j, k] = 0.0
+            # Z 境界: k=nz-1 を入口、k=0 を出口（側壁間の流体帯のみ。固体セルは上書きしない）
+            elif k == nz - 1:
+                cell_id[i, j, k] = INLET
+                sdf[i, j, k] = 100.0
+            elif k == 0:
+                cell_id[i, j, k] = OUTLET
+                sdf[i, j, k] = 100.0
 
     @staticmethod
     @ti.kernel
@@ -336,7 +343,7 @@ class GeometryBuilder:
         self._build_pin_fin_sdf_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
     def build_validation_channel(self, ctx):
-        """検証用チャネル（左右の壁）を ctx の cell_id / sdf に書き込む。"""
+        """検証用チャネル: 左右 X 壁（固体）と Z=nz-1 入口・Z=0 出口を cell_id / sdf に書き込む。"""
         log.debug("Geometry: validation_channel (%s x %s x %s)", ctx.nx, ctx.ny, ctx.nz)
         self._build_validation_channel_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
@@ -675,3 +682,7 @@ class GeometryBuilder:
         """[ベンチマーク用] 差温キャビティ (自然対流と浮力の検証)"""
         self._build_thermal_cavity_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
+# geometry.py の GeometryBuilder クラス内のどこかに追加
+    def build_empty_domain(self, ctx):
+        """[AI・IBM検証用] 障害物のない空の空間（境界条件や周期境界用）"""
+        self._set_inlet_outlet_kernel(ctx.cell_id, ctx.nz)

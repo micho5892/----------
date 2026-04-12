@@ -176,6 +176,8 @@ class ImmersedBoundaryModel(PhysicsModel):
                 "v0": obj.get("v0_lbm", [0,0,0]),
                 "omega": obj.get("omega_lbm", [0,0,0]),
             }
+            if "temperature" in obj:
+                parsed_obj["temperature"] = float(obj["temperature"])
             parsed_objects.append(parsed_obj)
             total_markers += len(markers)
             
