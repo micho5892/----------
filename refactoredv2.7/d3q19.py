@@ -83,4 +83,7 @@ class D3Q19:
 
     @ti.func
     def get_geq(self, temp_val, v_val, d):
-        return self.w[d] * temp_val * (1.0 + 3.0 * self.e[d].dot(v_val))
+        eu = self.e[d].dot(v_val)
+        uv = v_val.dot(v_val)
+        # f_eq と同様に 2次の項まで含める
+        return self.w[d] * temp_val * (1.0 + 3.0*eu + 4.5*eu**2 - 1.5*uv)

@@ -72,48 +72,49 @@ class LBMSimulator:
             # ==========================================================
             # 1. 温度場 g の緩和と移流 (統合)
             # ==========================================================
-            tau_g = ctx.tau_g_table[cid]
-            omega_g = 1.0 / tau_g
-            v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
-            temp = ctx.temp[i, j, k]
-            
-            for d in ti.static(range(19)):
-                geq = self.d3q19.get_geq(temp, v_g, d)
+            if self.is_fluid(ctx, cid):
+                tau_g = ctx.tau_g_table[cid]
+                omega_g = 1.0 / tau_g
+                v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
+                temp = ctx.temp[i, j, k]
                 
-                # 計算した直後の値をローカル変数に持つ（g_postの代わり）
-                g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + self.d3q19.w[d] * ctx.S_g[i, j, k]
-                
-                ip = i + self.d3q19.e[d][0]
-                jp = j + self.d3q19.e[d][1]
-                kp = k + self.d3q19.e[d][2]
+                for d in ti.static(range(19)):
+                    geq = self.d3q19.get_geq(temp, v_g, d)
+                    
+                    # 計算した直後の値をローカル変数に持つ（g_postの代わり）
+                    g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + self.d3q19.w[d] * ctx.S_g[i, j, k]
+                    
+                    ip = i + self.d3q19.e[d][0]
+                    jp = j + self.d3q19.e[d][1]
+                    kp = k + self.d3q19.e[d][2]
 
-                if ti.static(self.cfg.periodic_x): ip = ip % ctx.nx
-                if ti.static(self.cfg.periodic_y): jp = jp % ctx.ny
-                if ti.static(self.cfg.periodic_z): kp = kp % ctx.nz
+                    if ti.static(self.cfg.periodic_x): ip = ip % ctx.nx
+                    if ti.static(self.cfg.periodic_y): jp = jp % ctx.ny
+                    if ti.static(self.cfg.periodic_z): kp = kp % ctx.nz
 
-                is_inside = True
-                if ti.static(not self.cfg.periodic_x):
-                    if ip < 0 or ip >= ctx.nx: is_inside = False
-                if ti.static(not self.cfg.periodic_y):
-                    if jp < 0 or jp >= ctx.ny: is_inside = False
-                if ti.static(not self.cfg.periodic_z):
-                    if kp < 0 or kp >= ctx.nz: is_inside = False
+                    is_inside = True
+                    if ti.static(not self.cfg.periodic_x):
+                        if ip < 0 or ip >= ctx.nx: is_inside = False
+                    if ti.static(not self.cfg.periodic_y):
+                        if jp < 0 or jp >= ctx.ny: is_inside = False
+                    if ti.static(not self.cfg.periodic_z):
+                        if kp < 0 or kp >= ctx.nz: is_inside = False
 
-                if is_inside:
-                    neighbor_cid = ctx.cell_id[ip, jp, kp]
-                    if self.is_fluid(ctx, neighbor_cid):
-                        ctx.g_new[ip, jp, kp, d] = g_curr
+                    if is_inside:
+                        neighbor_cid = ctx.cell_id[ip, jp, kp]
+                        if self.is_fluid(ctx, neighbor_cid):
+                            ctx.g_new[ip, jp, kp, d] = g_curr
+                        else:
+                            inv_d = self.d3q19.inv_d[d]
+                            # 固体: boundary_conditions の isothermal_wall なら ABB で Tw を課す。それ以外は BB。
+                            if ctx.g_wall_use_abb[neighbor_cid] != 0:
+                                Tw = ctx.g_wall_tw[neighbor_cid]
+                                ctx.g_new[i, j, k, inv_d] = -g_curr + 2.0 * self.d3q19.w[d] * Tw
+                            else:
+                                ctx.g_new[i, j, k, inv_d] = g_curr
                     else:
                         inv_d = self.d3q19.inv_d[d]
-                        # 固体: boundary_conditions の isothermal_wall なら ABB で Tw を課す。それ以外は BB。
-                        if ctx.g_wall_use_abb[neighbor_cid] != 0:
-                            Tw = ctx.g_wall_tw[neighbor_cid]
-                            ctx.g_new[i, j, k, inv_d] = -g_curr + 2.0 * self.d3q19.w[d] * Tw
-                        else:
-                            ctx.g_new[i, j, k, inv_d] = g_curr
-                else:
-                    inv_d = self.d3q19.inv_d[d]
-                    ctx.g_new[i, j, k, inv_d] = g_curr
+                        ctx.g_new[i, j, k, inv_d] = g_curr
                 
             # ==========================================================
             # 2. 速度場 f の緩和と移流 (統合)
@@ -280,33 +281,36 @@ class LBMSimulator:
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
             cid = ctx.cell_id[i, j, k]
             
-            # 1. 温度場は全セル(流体・固体)で計算して更新
-            new_temp = 0.0
-            for d in ti.static(range(19)):
-                g_val = ctx.g_new[i, j, k, d]
-                new_temp += g_val
-                ctx.g_old[i, j, k, d] = g_val
-            ctx.temp[i, j, k] = new_temp
-            
-            # 2. 速度・密度場は流体のみ計算
             if self.is_fluid(ctx, cid):
+                new_temp = 0.0
                 new_rho = 0.0
                 new_v = ti.Vector([0.0, 0.0, 0.0])
                 
                 for d in ti.static(range(19)):
+                    # g と f の更新をまとめる
+                    g_val = ctx.g_new[i, j, k, d]
+                    new_temp += g_val
+                    ctx.g_old[i, j, k, d] = g_val
+                    
                     f_val = ctx.f_new[i, j, k, d]
                     new_rho += f_val
                     new_v += f_val * self.d3q19.e[d]
                     ctx.f_old[i, j, k, d] = f_val
                 
+                ctx.temp[i, j, k] = new_temp
                 ctx.rho[i, j, k] = new_rho
                 if new_rho > 1e-12:
                     ctx.v[i, j, k] = new_v / new_rho
                 else:
                     ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
             else:
+                # 固体セルはゼロ(または壁温度)固定
                 ctx.rho[i, j, k] = 1.0
                 ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+                if ctx.g_wall_use_abb[cid] != 0:
+                    ctx.temp[i, j, k] = ctx.g_wall_tw[cid]
+                else:
+                    ctx.temp[i, j, k] = 0.0
 
     @ti.kernel
     def move_particles(self, ctx: ti.template(), inject_per_step: ti.i32):

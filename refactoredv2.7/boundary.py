@@ -164,9 +164,24 @@ class PressureOutlet:
                         ctx.f_new[i, j, k, d] = self.d3q19.get_feq(1.0, v_zero, d)
                         ctx.g_new[i, j, k, d] = self.d3q19.get_geq(0.0, v_zero, d)
 
-
+# boundary.py の IsothermalWall を修正
 @ti.data_oriented
 class IsothermalWall:
+    def __init__(self, d3q19, neem: NeemOps, use_neem: bool, target_id, temperature):
+        # use_neem や neem 引数は残しておいても良いですが、処理は使いません
+        self.target_id = target_id
+        self.temperature = temperature
+
+    @ti.kernel
+    def apply_after_macro(self, ctx: ti.template()):
+        # 可視化や Analytics のため、固体セルに温度値だけ入れておく
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            if ctx.cell_id[i, j, k] == self.target_id:
+                ctx.temp[i, j, k] = self.temperature
+                # ★ g_old をNEEMで上書きする処理は、ABBと干渉しシステムを破壊するため全て削除
+
+@ti.data_oriented
+class _IsothermalWall_old:
     """等温壁: マクロ温度固定。g は隣接流体から NEEM（オプション）。"""
 
     def __init__(self, d3q19, neem: NeemOps, use_neem: bool, target_id, temperature):
