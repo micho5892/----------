@@ -26,9 +26,66 @@ except Exception:
     run_optimize = None
 
 # 解析解用の物理パラメータ（平均速度 U_mean に整合する圧力勾配を内部で決定）
-MU_PHYS = 1.2e-4   # 粘性係数 μ（ポアズイユ式にそのまま入れる）
-RHO_FLUID = 1.2    # 流体密度（domain_properties の流体と一致）
+# run_channel_benchmark 内で CoolProp（またはフォールバック）と同期する
+MU_PHYS = 1.2e-4   # 動粘性係数 μ [Pa·s]（ポアズイユ式にそのまま入れる）
+RHO_FLUID = 1.2    # 流体密度 [kg/m³]（domain_properties の流体と一致）
 H_PHYS = 0.1       # 有効間隔 h（平板間の距離）
+
+
+# CoolProp 未使用時の空気代表値（300K 付近のおおよそ）
+_AIR_FALLBACK_FP = {
+    "rho_f": 1.2,
+    "nu": 1.5e-5,
+    "k_f": 0.026,
+    "Cp_f": 1005.0,
+}
+
+
+def fluid_transport_numbers(*, nu, k, rho, cp):
+    """
+    シミュレータの get_materials_dict と同じ定義で輸送係数をまとめる。
+
+    - 運動粘度 ν [m²/s]
+    - 熱拡散率 α = k/(ρ Cp) [m²/s]  … config.py の alpha と一致
+    - プラントル数 Pr = ν/α
+    - 動粘性 μ = ν ρ [Pa·s] … plot_poiseuille_validation の MU_PHYS と一致させる用
+    """
+    alpha = float(k) / (float(rho) * float(cp))
+    pr = float(nu) / alpha if alpha > 1e-30 else float("nan")
+    return {
+        "nu": float(nu),
+        "k": float(k),
+        "rho": float(rho),
+        "Cp": float(cp),
+        "alpha": alpha,
+        "Pr": pr,
+        "mu_dynamic": float(nu) * float(rho),
+    }
+
+
+def print_benchmark_fluid_intent(
+    fp, *, u_inlet_p, lx_p, nx, ny, wall_thickness_cells=10
+):
+    """
+    ベンチマーク意図としての ν と k/(ρCp) が自己矛盾なく入っているかを表示する。
+    Graetz 横断の厳密曲線は Pr を含まないが、発達長さ・Nu 議論では Pr が効く。
+    """
+    from wall_metrics import channel_hydraulic_diameter_p
+
+    z = fluid_transport_numbers(
+        nu=fp["nu"], k=fp["k_f"], rho=fp["rho_f"], cp=fp["Cp_f"]
+    )
+    dx = float(lx_p) / float(nx)
+    d_h = float(channel_hydraulic_diameter_p(nx, ny, lx_p, wall_thickness_cells=wall_thickness_cells))
+    re_dh = float(u_inlet_p) * d_h / z["nu"] if z["nu"] > 1e-30 else float("nan")
+    print("[benchmark fluid] 物性（流体セル ID 0,20,21 と domain_properties で一致すること）:")
+    print(f"    rho = {z['rho']:.6g} kg/m3,  Cp = {z['Cp']:.6g} J/(kg·K)")
+    print(f"    nu  = {z['nu']:.6e} m2/s,   k = {z['k']:.6e} W/(m·K)")
+    print(f"    alpha = k/(rho*Cp) = {z['alpha']:.6e} m2/s  （SimConfig.get_materials_dict と同式）")
+    print(f"    Pr = nu/alpha = {z['Pr']:.6f}")
+    print(f"    mu = nu*rho = {z['mu_dynamic']:.6e} Pa·s  （解析ポアズイユの MU_PHYS に使用）")
+    print(f"    dx = Lx_p/nx = {dx:.6e} m,  D_h (parallel plates) ≈ {d_h:.6e} m")
+    print(f"    U_inlet_p = {u_inlet_p:.6g} m/s  →  Re_Dh = U*D_h/nu ≈ {re_dh:.4f}")
 
 
 def _trapezoid_integral(y: np.ndarray, x: np.ndarray) -> float:
@@ -120,7 +177,7 @@ def extract_channel_profiles_from_npz(npz_path, nx, ny, nz):
     
     # 空間のX方向中央、Z方向の十分に下流（風が発達しきった領域）をカット
     x_mid = nx // 2
-    z_target = int(nz * 0.15)  # 全長の20%進んだ下流位置
+    z_target = int(nz * 0.15)  # 主流方向に全長の 15% 相当の下流位置（main.py parallel_plates の k_target と一致）
     
     # Y方向（壁と壁の間）のプロファイルを取得
     w_profile = v_field[x_mid, :, z_target, 2] # Z方向(主流)の速度
@@ -226,12 +283,20 @@ def run_channel_benchmark(artifact_parent=None):
     print(f"==================================================")
     
     # --- パラメータの設定 ---
-    fp = get_fluid_properties_coolprop("Air", 300.0, 101325.0) # "Water"
-    nx, ny, nz = 32, 64, 512 # Z方向に長くして、風が発達しきる距離を稼ぐ
-    U_inlet_p = 0.01         # 綺麗な層流を保つため、流速は少し遅め（断面平均として解析解と対応）
+    fp = get_fluid_properties_coolprop("Air", 300.0, 101325.0)  # "Water"
+    if fp is None:
+        print(
+            "[WARN] CoolProp が使えないため、空気の代表物性にフォールバックします。"
+            "（Pr ≈ 0.71 付近の意図は維持されますが、数値は文献値と完全一致しません）"
+        )
+        fp = dict(_AIR_FALLBACK_FP)
+    nx, ny, nz = 32, 64, 512  # Z方向に長くして、風が発達しきる距離を稼ぐ
+    Lx_p = 0.1
+    U_inlet_p = 0.005  # 綺麗な層流を保つため、流速は少し遅め（断面平均として解析解と対応）
     global RHO_FLUID, MU_PHYS
     RHO_FLUID = fp["rho_f"]
     MU_PHYS = fp["nu"] * RHO_FLUID
+    print_benchmark_fluid_intent(fp, u_inlet_p=U_inlet_p, lx_p=Lx_p, nx=nx, ny=ny)
     if artifact_parent is None:
         artifact_parent = os.path.join("results", "validation_poiseuille")
     run_paths = {}
@@ -253,7 +318,7 @@ def run_channel_benchmark(artifact_parent=None):
         # neem_isothermal_wall=False,
         
         nx=nx, ny=ny, nz=nz,
-        Lx_p=0.1,              
+        Lx_p=Lx_p,
         U_inlet_p=U_inlet_p,
         
         max_time_p=90.0,  
@@ -262,7 +327,7 @@ def run_channel_benchmark(artifact_parent=None):
         vis_interval=100, 
         vti_export_interval=0, particles_inject_per_step=0,
         
-        sponge_thickness=20.0, # 出口での反射を防ぐためスポンジ層をON
+        sponge_thickness=0.0, # 出口での反射を防ぐためスポンジ層をON
         
         # 空間に存在する全IDの物性を定義 (ゼロ割防止)
         # （これで Pr≒0.71 となり、熱的助走区間が短くなって下流でNu=7.54に漸近します）

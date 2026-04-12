@@ -107,6 +107,7 @@ def run_simulation(**kwargs):
     from analytics import Analytics
     from physics import PhysicsManager
     from data_exporter import DataExporter
+    from diagnostics import log_parallel_plates_transport_diagnostics
 
     try:
         from vtk_export import export_step
@@ -284,10 +285,14 @@ def run_simulation(**kwargs):
             monitor_name = ""
 
             if benchmark == "parallel_plates":
-                k_target = int(cfg.nz * 0.1)
+                # run_benchmark_channel.extract_channel_profiles_from_npz の z_target と一致
+                k_target = int(cfg.nz * 0.15)
                 monitor_val_v = analytics.get_local_Nu(ctx, k_target)
                 monitor_val_t = temp_np[cfg.nx//2, cfg.ny//2, k_target]
                 monitor_name = f"Nu={monitor_val_v:.2f} | T={monitor_val_t:.3f}"
+                log_parallel_plates_transport_diagnostics(
+                    ctx, cfg, k_target=k_target, logger=logger, step=step
+                )
             elif benchmark == "cavity":
                 cx, cy, cz = cfg.nx//2, cfg.ny//2, cfg.nz//2
                 monitor_val_v = (v_np[cx, cy, cz, 0]**2 + v_np[cx, cy, cz, 2]**2)**0.5
