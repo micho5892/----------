@@ -271,7 +271,7 @@ def run_simulation(**kwargs):
     physics_manager = PhysicsManager(sim.d3q19, cfg)
     analytics = Analytics(sim.d3q19, cfg)
     sim.init_fields(ctx)
-    if benchmark == "parallel_plates":
+    if benchmark in ("parallel_plates", "parallel_plates_ibm"):
         logger.info(
             "Nu model: %s | L_ref=%.6e | k_ref_mode=%s",
             analytics.nu_model_name,
@@ -350,7 +350,7 @@ def run_simulation(**kwargs):
             monitor_val_t = 0.0
             monitor_name = ""
 
-            if benchmark == "parallel_plates":
+            if benchmark in ("parallel_plates", "parallel_plates_ibm"):
                 k_target = int(cfg.nz * 0.15)
                 local_nu = analytics.get_local_Nu(
                     ctx, k_target, log_thermal_slice=True

@@ -32,6 +32,42 @@ def create_cylinder_markers(radius_lbm, center_lbm, ny):
             points.append([x, float(j) + 0.5, z])
     return np.array(points, dtype=np.float32)
 
+
+def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
+    """
+    法線が Y 方向の平板（チャネル上下壁）用マーカー。
+    指定された壁の厚み (wall_thickness_lbm) の内部空間「すべて」にマーカーを敷き詰める（Volume IBM）。
+    """
+    points = []
+    
+    # 敷き詰めるマーカーの間隔 (1.0セル間隔だとLBM格子と完全に一致してしまうため、
+    # わずかにずらすか、0.8セル間隔などで密に配置するのが一般的です)
+    spacing = 0.8 
+    
+    # 壁のY方向の範囲を決定
+    if side == "lower":
+        y_start = 0.0
+        y_end = float(wall_thickness_lbm)
+    else: # "upper"
+        y_start = float(ny - wall_thickness_lbm)
+        y_end = float(ny)
+
+    # Y方向（壁の厚み分）のマーカー座標リスト
+    y_coords = np.arange(y_start + spacing/2.0, y_end, spacing)
+    
+    # X方向のマーカー座標リスト
+    x_coords = np.arange(float(i_min) + spacing/2.0, float(i_max_excl), spacing)
+    
+    # Z方向のマーカー座標リスト
+    z_coords = np.arange(0.0 + spacing/2.0, float(nz), spacing)
+
+    for y in y_coords:
+        for x in x_coords:
+            for z in z_coords:
+                points.append([x, y, z])
+                
+    return np.array(points, dtype=np.float32)
+
 # --- IBM マネージャ ---
 @ti.data_oriented
 class IBManager:
@@ -238,7 +274,15 @@ class IBManager:
                 self.pos[p] += v_rot
                 self.vel[p] = v_rot
 
+    @ti.kernel
+    def clear_forces_and_sources(self, ctx: ti.template()):
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            ctx.F_int[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+            ctx.S_g[i, j, k] = 0.0
+
     def step(self, ctx):
+        # ★追加: 毎ステップ、IBMの処理を始める前に完全にゼロクリアする
+        self.clear_forces_and_sources(ctx) 
         self.interp_velocity_and_calc_force(ctx)
         self.spread_force(ctx)
         self.update_objects_and_markers()

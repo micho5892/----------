@@ -137,8 +137,13 @@ class PhysicsManager:
 @ti.data_oriented
 class ImmersedBoundaryModel(PhysicsModel):
     def __init__(self, fp_dtype, cfg):
-        from immersed_boundary import IBManager, create_sphere_markers, create_cylinder_markers
-        
+        from immersed_boundary import (
+            IBManager,
+            create_sphere_markers,
+            create_cylinder_markers,
+            create_y_plate_markers,
+        )
+
         self.cfg = cfg
         ibm_cfg = cfg.physics_models.get("immersed_boundary", {})
         objects_cfg = ibm_cfg.get("objects", [])
@@ -162,6 +167,34 @@ class ImmersedBoundaryModel(PhysicsModel):
                 # Y方向貫通円柱
                 markers = create_cylinder_markers(r_lbm, center_lbm, cfg.ny)
                 self.dA_lbm = (2.0 * math.pi * r_lbm * float(cfg.ny)) / len(markers)
+
+            elif shape == "y_plate":
+                wall_th = int(obj.get("wall_thickness_lbm", 10))
+                side = str(obj.get("side", "lower")).lower()
+                i_min = int(obj.get("i_min_lbm", wall_th))
+                i_max_excl = int(obj.get("i_max_excl_lbm", cfg.nx - wall_th))
+                
+                # ▼ 変更: 平面のY座標ではなく、厚みと方向を渡してブロック状のマーカーを生成
+                markers = create_y_plate_markers(cfg.nz, wall_th, side, i_min, i_max_excl, cfg.ny)
+                
+                if len(markers) == 0:
+                    raise ValueError(
+                        "immersed_boundary y_plate: マーカーが0個です（i_min_lbm / i_max_excl_lbm / nx を確認）"
+                    )
+                n_mark = len(markers)
+                
+                # ▼ 体積分のマーカーになったため、dA (面積) ではなく dV (体積) として扱う必要がありますが、
+                # LBMの Direct Forcing においては、マーカー1個あたりの影響体積として計算します。
+                vol_lbm = float(i_max_excl - i_min) * float(wall_th) * float(cfg.nz)
+                self.dA_lbm = vol_lbm / float(n_mark) # 1マーカーあたりの体積(重み)
+                
+                # 中心座標の計算 (大体でOK)
+                y_center = float(wall_th)/2.0 if side == "lower" else float(cfg.ny) - float(wall_th)/2.0
+                center_lbm = [
+                    0.5 * float(i_min + i_max_excl - 1),
+                    y_center,
+                    0.5 * float(cfg.nz - 1),
+                ]
             else:
                 surface_area_lbm = 4.0 * math.pi * (r_lbm ** 2)
                 num_points = int(surface_area_lbm / (0.8 ** 2))

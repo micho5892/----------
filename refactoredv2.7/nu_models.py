@@ -28,7 +28,7 @@ def build_nu_model(cfg):
     benchmark_name = getattr(cfg, "benchmark_name", "unknown")
     log.debug("build_nu_model: benchmark=%s", benchmark_name)
 
-    if benchmark_name == "parallel_plates":
+    if benchmark_name in ("parallel_plates", "parallel_plates_ibm"):
         d_h = float(channel_hydraulic_diameter_p(cfg.nx, cfg.ny, cfg.Lx_p, wall_thickness_cells=10))
         return NuModelSpec(
             name="internal_flow_dh_bulk_k",

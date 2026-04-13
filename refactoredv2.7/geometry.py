@@ -47,6 +47,32 @@ class GeometryBuilder:
 
     @staticmethod
     @ti.kernel
+    def _build_ibm_channel_y_walls_kernel(
+        cell_id: ti.template(), sdf: ti.template(), nx: int, ny: int, nz: int, wall_thickness: int
+    ):
+        """
+        検証チャネル（Z+:入口 / Z-:出口、X 方向に厚さ wall の固体側壁）に準じるが、
+        Y 方向の上下壁は固体にせず流体のまま（IBM で壁を表現）。
+        入口・出口は Y の壁厚ぶんだけ中央の帯に限定し、壁帯と重ならない。
+        """
+        for i, j, k in cell_id:
+            cell_id[i, j, k] = FLUID_A
+            sdf[i, j, k] = 100.0
+            w = wall_thickness
+            if i < w or i > (nx - 1 - w):
+                cell_id[i, j, k] = SOLID
+                sdf[i, j, k] = 0.0
+            elif k == nz - 1:
+                if j >= w and j < ny - w:
+                    cell_id[i, j, k] = INLET
+                    sdf[i, j, k] = 100.0
+            elif k == 0:
+                if j >= w and j < ny - w:
+                    cell_id[i, j, k] = OUTLET
+                    sdf[i, j, k] = 100.0
+
+    @staticmethod
+    @ti.kernel
     def _build_karman_cylinder_kernel(cell_id: ti.template(), sdf: ti.template(), nx: int, ny: int, nz: int):
         for i, j, k in cell_id:
             cell_id[i, j, k] = FLUID_A
@@ -98,6 +124,38 @@ class GeometryBuilder:
         """[ベンチマーク1用] 平行平板チャネル (ポアズイユ流れ・熱伝達検証)"""
         self._build_parallel_plates_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
         self._set_parallel_plates_inlet_outlet_kernel(ctx.cell_id, ctx.ny, ctx.nz)
+
+    @staticmethod
+    @ti.kernel
+    def _build_parallel_plates_ibm_fluid_kernel(
+        cell_id: ti.template(), sdf: ti.template(), nx: int, ny: int, nz: int
+    ):
+        """平行平板チャネル相当だが Y 方向固体帯を置かない（等温壁は IBM のみ）。"""
+        for i, j, k in cell_id:
+            cell_id[i, j, k] = FLUID_A
+            sdf[i, j, k] = 100.0
+
+    @staticmethod
+    @ti.kernel
+    def _set_parallel_plates_ibm_inlet_outlet_kernel(
+        cell_id: ti.template(), ny: int, nz: int, wall_thickness: int
+    ):
+        """入口・出口は Y の壁厚ぶん除いた中央帯のみ（固体帯と同じ j 範囲）。"""
+        w = wall_thickness
+        for i, j in ti.ndrange(cell_id.shape[0], cell_id.shape[1]):
+            if j >= w and j < ny - w:
+                cell_id[i, j, nz - 1] = INLET
+                cell_id[i, j, 0] = OUTLET
+
+    def build_parallel_plates_ibm(self, ctx, wall_thickness: int = 10):
+        """
+        [ベンチマーク1・IBM版] 平行平板と同じ流路幅・入口出口の切り方だが、
+        Y 上下の等温壁は格子固体ではなく IBM 平板で表現する。
+        """
+        self._build_parallel_plates_ibm_fluid_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
+        self._set_parallel_plates_ibm_inlet_outlet_kernel(
+            ctx.cell_id, ctx.ny, ctx.nz, int(wall_thickness)
+        )
 
     @staticmethod
     @ti.kernel
@@ -346,6 +404,26 @@ class GeometryBuilder:
         """検証用チャネル: 左右 X 壁（固体）と Z=nz-1 入口・Z=0 出口を cell_id / sdf に書き込む。"""
         log.debug("Geometry: validation_channel (%s x %s x %s)", ctx.nx, ctx.ny, ctx.nz)
         self._build_validation_channel_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
+
+    def build_ibm_channel_y_walls(self, ctx, wall_thickness: int = 10):
+        """
+        IBM 検証用: X 方向固体側壁は validation と同様、Y 上下は流体（IBM 平板）。
+        入口・出口は Y 壁厚ぶん中央帯のみ（壁と Z 面で重ならない）。
+        """
+        if ctx.ny <= 2 * wall_thickness or ctx.nx <= 2 * wall_thickness:
+            raise ValueError(
+                f"ibm_channel_y_walls: nx,ny は壁厚の2倍より大きくしてください (nx={ctx.nx}, ny={ctx.ny}, wall={wall_thickness})"
+            )
+        log.debug(
+            "Geometry: ibm_channel_y_walls wall=%s (%s x %s x %s)",
+            wall_thickness,
+            ctx.nx,
+            ctx.ny,
+            ctx.nz,
+        )
+        self._build_ibm_channel_y_walls_kernel(
+            ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz, int(wall_thickness)
+        )
 
     def build_karman_cylinder(self, ctx):
         """カルマン渦観測用の円柱形状を ctx の cell_id / sdf に書き込む。"""
@@ -682,7 +760,7 @@ class GeometryBuilder:
         """[ベンチマーク用] 差温キャビティ (自然対流と浮力の検証)"""
         self._build_thermal_cavity_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
-# geometry.py の GeometryBuilder クラス内のどこかに追加
+
     def build_empty_domain(self, ctx):
         """[AI・IBM検証用] 障害物のない空の空間（境界条件や周期境界用）"""
         self._set_inlet_outlet_kernel(ctx.cell_id, ctx.nz)
