@@ -248,6 +248,8 @@ def run_simulation(**kwargs):
     ctx = SimulationContext(cfg.nx, cfg.ny, cfg.nz, cfg.n_particles, cfg.fp_dtype)
     ctx.set_materials(cfg.get_materials_dict())
 
+    ctx.set_g_thermal_wall_tables_from_config(cfg)
+
     # DataExporterの初期化 (保存間隔が設定されていれば)
     exporter = None
     if data_export_interval > 0:
@@ -258,13 +260,37 @@ def run_simulation(**kwargs):
     
     # "benchmark" の文字列から、呼び出すメソッド名を自動生成 (例: "build_rotating_hollow_cylinder")
     build_method_name = f"build_{benchmark}"
-    
+
+    # 互換フォールバック（旧名 -> 新名）
+    build_alias = {
+        "build_cylinder": "build_benchmark_cylinder",
+    }
+
     # GeometryBuilderの中に該当するメソッドが存在するかチェックして実行
-    if hasattr(geo, build_method_name):
-        build_method = getattr(geo, build_method_name)
+    selected_method = build_method_name
+    if not hasattr(geo, selected_method):
+        alias_name = build_alias.get(build_method_name, None)
+        if alias_name is not None and hasattr(geo, alias_name):
+            logger.warning(
+                "Geometry method '%s' が見つからないため '%s' を使用します。",
+                build_method_name,
+                alias_name,
+            )
+            selected_method = alias_name
+
+    if hasattr(geo, selected_method):
+        build_method = getattr(geo, selected_method)
         build_method(ctx)
     else:
-        raise ValueError(f"❌ エラー: '{build_method_name}' という形状関数が geometry.py に見つかりません！")
+        import geometry as geometry_module
+        available = sorted(
+            [name for name in dir(geo) if name.startswith("build_")]
+        )
+        raise ValueError(
+            "❌ エラー: "
+            f"'{build_method_name}' という形状関数が geometry.py に見つかりません！ "
+            f"(loaded={geometry_module.__file__}, available={available})"
+        )
 
     sim = LBMSimulator(cfg)
     bc_manager = BoundaryManager(sim.d3q19, cfg)

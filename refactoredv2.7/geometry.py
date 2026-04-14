@@ -764,3 +764,26 @@ class GeometryBuilder:
     def build_empty_domain(self, ctx):
         """[AI・IBM検証用] 障害物のない空の空間（境界条件や周期境界用）"""
         self._set_inlet_outlet_kernel(ctx.cell_id, ctx.nz)
+
+    def build_cylinder(self, ctx):
+        """
+        カルマン渦（IBM検証用）のベース領域構築。
+        円柱自体はIBMプラグイン側で描画されるため、
+        Eulerianグリッドは全体を流体(FLUID_A)として「空の風洞」を作ります。
+        """
+        self._build_cylinder_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
+
+    @staticmethod
+    @ti.kernel
+    def _build_cylinder_kernel(cell_id: ti.template(), sdf: ti.template(), nx: int, ny: int, nz: int):
+        for i, j, k in cell_id:
+            # 基本はすべて流体
+            cell_id[i, j, k] = 0  # FLUID_A
+            sdf[i, j, k] = 100.0  # SDFの初期値（十分に遠い値）
+            
+            # Z方向の入口・出口の定義 (設定に合わせて Z=nz-1 を入口、Z=0 を出口とする)
+            if k == nz - 1:
+                cell_id[i, j, k] = 20 # INLET
+            elif k == 0:
+                cell_id[i, j, k] = 21 # OUTLET
+

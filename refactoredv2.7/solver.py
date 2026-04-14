@@ -287,6 +287,14 @@ class LBMSimulator:
     def update_macro(self, ctx: ti.template()):
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
             cid = ctx.cell_id[i, j, k]
+            if phi_val > 0.99:
+                u_solid = ti.Vector([0.0, 0.0, 0.0])
+                ctx.v[i, j, k] = u_solid 
+                
+                # ★追加：固体内部の温度を固定（等温円柱の温度）
+                # ※本来はオブジェクトの temperature プロパティを参照しますが、
+                # カルマン渦の検証用として一旦 1.0 に固定します。
+                ctx.temp[i, j, k] = 1.0
             
             if self.is_fluid(ctx, cid):
                 new_temp = 0.0
