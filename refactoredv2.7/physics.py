@@ -208,13 +208,24 @@ class ImmersedBoundaryModel(PhysicsModel):
                 "center": center_lbm,
                 "v0": obj.get("v0_lbm", [0,0,0]),
                 "omega": obj.get("omega_lbm", [0,0,0]),
+                "shape": shape,
+                "radius_lbm": r_lbm,
             }
             if "temperature" in obj:
                 parsed_obj["temperature"] = float(obj["temperature"])
             parsed_objects.append(parsed_obj)
             total_markers += len(markers)
             
-        self.ibm = IBManager(fp_dtype, parsed_objects, total_markers, self.dA_lbm)
+        phase1_epsilon_lbm = ibm_cfg.get("phase1_epsilon_lbm", 1.5)
+        phase1_num_iterations = ibm_cfg.get("phase1_num_iterations", 3)
+        self.ibm = IBManager(
+            fp_dtype,
+            parsed_objects,
+            total_markers,
+            self.dA_lbm,
+            phase1_epsilon_lbm=phase1_epsilon_lbm,
+            phase1_num_iterations=phase1_num_iterations,
+        )
         
         # --- 毎ステップの力を記録するCSVの準備 ---
         # cfgに out_dir がなければカレントディレクトリの results フォルダに保存

@@ -124,3 +124,16 @@ Python
 内部流速の消失: Paraview等の可視化で円柱内部（$\phi = 1.0$ の領域）の流速が完全にゼロになります。
 抗力（Cd）の安定: 境界での速度が厳密にゼロ（滑りなし）になるため、ibm_forces.csv に出力される抗力の値が、階段状（Staircase）モデルの時よりも滑らかで理論値に近づきます。
 まずは「固定された円柱」でテストを行っていただきたいのですが、config.py またはメインループから radius_lbm （円柱の半径）を update_sdf_and_phi に渡す仕組みの構築について、方針は固まっていますか？
+
+--- v2.7 実装メモ（仮設定値・仮処理） ---
+- 対象ブランチ実装: refactoredv2.7
+- 仮設定値:
+  - phase1_epsilon_lbm = 1.5（phi拡散界面厚み）
+  - phase1_num_iterations = 3（反復直接強制の反復回数）
+  - u_solid = [0.0, 0.0, 0.0]（固定物体として速度拘束）
+- 仮処理:
+  - SDF/phi は「先頭オブジェクトが円柱(shape=cylinder)」の場合のみ毎ステップ更新
+  - SDF は Y方向貫通円柱として X-Z 距離で算出
+  - phi は smooth Heaviside（sdf<-eps:1, sdf>eps:0, 中間はsin補間）
+  - 反復中の仮速度更新は v += F_int / rho を採用
+  - VPM は solver.update_macro の流体セル更新末尾で適用

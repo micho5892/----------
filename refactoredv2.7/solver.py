@@ -304,6 +304,12 @@ class LBMSimulator:
                     ctx.v[i, j, k] = new_v / new_rho
                 else:
                     ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+
+                # フェーズ1: 体積ペナルティ法(VPM)で固体内部速度を剛体速度に拘束
+                phi_val = ctx.phi[i, j, k]
+                if phi_val > 0.0:
+                    u_solid = ti.Vector([0.0, 0.0, 0.0])  # 仮実装: 固定物体
+                    ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
             else:
                 # 固体セルはゼロ(または壁温度)固定
                 ctx.rho[i, j, k] = 1.0

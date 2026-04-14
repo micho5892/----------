@@ -71,7 +71,7 @@ def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
 # --- IBM マネージャ ---
 @ti.data_oriented
 class IBManager:
-    def __init__(self, fp_dtype, objects_data, total_points, dA_lbm):
+    def __init__(self, fp_dtype, objects_data, total_points, dA_lbm, phase1_epsilon_lbm=1.5, phase1_num_iterations=3):
         """
         objects_data: 辞書のリスト。各物体のメタデータを含む
         """
@@ -92,9 +92,13 @@ class IBManager:
         self.obj_center = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
         self.obj_vel = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
         self.obj_omega = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects) # 角速度ベクトル
+        self.obj_shape = ti.field(dtype=ti.i32, shape=self.num_objects)  # 0:sphere, 1:cylinder, 2:y_plate
+        self.obj_radius_lbm = ti.field(dtype=fp_dtype, shape=self.num_objects)
         
         # 力計測用 (毎ステップの抗力・揚力を記録)
         self.obj_hydro_force = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
+        self.phase1_epsilon_lbm = float(phase1_epsilon_lbm)
+        self.phase1_num_iterations = max(1, int(phase1_num_iterations))
 
         #  温度場 (Thermal IBM) 用のフィールド
         self.marker_temp = ti.field(dtype=fp_dtype, shape=total_points)     # 各マーカーの目標温度
@@ -116,6 +120,8 @@ class IBManager:
         center_np = np.zeros((self.num_objects, 3), dtype=np.float32)
         vel_obj_np = np.zeros((self.num_objects, 3), dtype=np.float32)
         omega_np = np.zeros((self.num_objects, 3), dtype=np.float32)
+        shape_np = np.zeros(self.num_objects, dtype=np.int32)
+        radius_np = np.zeros(self.num_objects, dtype=np.float32)
 
         temp_obj_np = np.zeros(self.num_objects, dtype=np.float32)
         is_thermal_np = np.zeros(self.num_objects, dtype=np.int32)
@@ -143,6 +149,15 @@ class IBManager:
             if t_str == 'fixed': type_np[obj_id] = 0
             elif t_str == 'free': type_np[obj_id] = 1
             elif t_str == 'rotating': type_np[obj_id] = 2
+
+            shape_str = str(obj.get("shape", "sphere")).lower()
+            if shape_str == "cylinder":
+                shape_np[obj_id] = 1
+            elif shape_str == "y_plate":
+                shape_np[obj_id] = 2
+            else:
+                shape_np[obj_id] = 0
+            radius_np[obj_id] = float(obj.get("radius_lbm", 0.0))
             
             mass_np[obj_id] = obj.get('mass', 1e9)
             center_np[obj_id] = obj.get('center', [0,0,0])
@@ -159,6 +174,8 @@ class IBManager:
         self.obj_center.from_numpy(center_np)
         self.obj_vel.from_numpy(vel_obj_np)
         self.obj_omega.from_numpy(omega_np)
+        self.obj_shape.from_numpy(shape_np)
+        self.obj_radius_lbm.from_numpy(radius_np)
         self.obj_temp.from_numpy(temp_obj_np)
         self.obj_is_thermal.from_numpy(is_thermal_np)
         self.marker_temp.from_numpy(marker_temp_np)
@@ -280,11 +297,48 @@ class IBManager:
             ctx.F_int[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
             ctx.S_g[i, j, k] = 0.0
 
+    @ti.kernel
+    def update_sdf_and_phi(self, ctx: ti.template()):
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            ctx.sdf[i, j, k] = 1.0e6
+            ctx.phi[i, j, k] = 0.0
+
+        if self.num_objects > 0:
+            center = self.obj_center[0]
+            radius_lbm = self.obj_radius_lbm[0]
+            shape = self.obj_shape[0]
+            eps = self.phase1_epsilon_lbm
+
+            if shape == 1 and radius_lbm > 0.0:
+                for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+                    dx = float(i) - center[0]
+                    dz = float(k) - center[2]
+                    dist = ti.math.sqrt(dx * dx + dz * dz)
+                    sdf_val = dist - radius_lbm
+                    ctx.sdf[i, j, k] = sdf_val
+
+                    if sdf_val < -eps:
+                        ctx.phi[i, j, k] = 1.0
+                    elif sdf_val > eps:
+                        ctx.phi[i, j, k] = 0.0
+                    else:
+                        ctx.phi[i, j, k] = 0.5 * (1.0 - ti.math.sin(ti.math.pi * sdf_val / (2.0 * eps)))
+
+    @ti.kernel
+    def apply_delta_force_to_velocity(self, ctx: ti.template()):
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            cid = ctx.cell_id[i, j, k]
+            if ctx.is_fluid_table[cid] == 1 and ctx.rho[i, j, k] > 1.0e-12:
+                ctx.v[i, j, k] += ctx.F_int[i, j, k] / ctx.rho[i, j, k]
+
     def step(self, ctx):
-        # ★追加: 毎ステップ、IBMの処理を始める前に完全にゼロクリアする
-        self.clear_forces_and_sources(ctx) 
-        self.interp_velocity_and_calc_force(ctx)
-        self.spread_force(ctx)
+        self.update_sdf_and_phi(ctx)
+        self.clear_forces_and_sources(ctx)
+        for it in range(self.phase1_num_iterations):
+            self.interp_velocity_and_calc_force(ctx)
+            self.spread_force(ctx)
+            if it < self.phase1_num_iterations - 1:
+                self.apply_delta_force_to_velocity(ctx)
         self.update_objects_and_markers()
         
     def get_hydro_forces(self):
