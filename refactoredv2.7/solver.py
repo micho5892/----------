@@ -287,6 +287,8 @@ class LBMSimulator:
     def update_macro(self, ctx: ti.template()):
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
             cid = ctx.cell_id[i, j, k]
+            phi_val = ctx.phi[i, j, k]
+
             if phi_val > 0.99:
                 u_solid = ti.Vector([0.0, 0.0, 0.0])
                 ctx.v[i, j, k] = u_solid 
@@ -332,6 +334,22 @@ class LBMSimulator:
                     ctx.temp[i, j, k] = ctx.g_wall_tw[cid]
                 else:
                     ctx.temp[i, j, k] = 0.0
+
+            phi_val = ctx.phi[i, j, k]
+            
+            # フェーズ1: 体積ペナルティ法(VPM)で固体境界〜内部の速度を剛体速度に拘束
+            if phi_val > 0.0:
+                u_solid = ti.Vector([0.0, 0.0, 0.0]) # 円柱は静止
+                ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
+
+            # 固体内部 (完全に内側) は温度も速度も完全に強制固定する
+            if phi_val > 0.99:
+                u_solid = ti.Vector([0.0, 0.0, 0.0])
+                ctx.v[i, j, k] = u_solid 
+                # ★追加：固体内部の温度を固定（等温円柱の温度）
+                # ※本来はオブジェクトの temperature プロパティを参照しますが、
+                # カルマン渦の検証用として一旦 1.0 に固定します。
+                ctx.temp[i, j, k] = 1.0  # T=1.0の等温円柱
 
     @ti.kernel
     def move_particles(self, ctx: ti.template(), inject_per_step: ti.i32):

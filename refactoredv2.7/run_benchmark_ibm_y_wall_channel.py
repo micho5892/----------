@@ -168,6 +168,7 @@ def verify_karman_vortex():
         
         domain_properties={
             0:  {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
+            10: {"nu": 0.0,         "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
             20: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
             21: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
         },
@@ -188,7 +189,7 @@ def verify_karman_vortex():
                     {
                         "shape": "cylinder",
                         "radius_p": state["L_ref"] / 2.0, # 直径から半径へ
-                        "center_p": [state["L_domain"] * 0.5, 0.0, state["L_domain"] * 0.75],
+                        "center_p": [state["L_domain"] * 0.5, 0.0, state["L_domain"] * 0.15],
                         "type": "fixed",
                         "temperature": 1.0
                     }
