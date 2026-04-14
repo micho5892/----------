@@ -77,7 +77,8 @@ class LBMSimulator:
                 phi_val = ctx.phi[i, j, k]
                 tau_g_fluid = ctx.tau_g_table[FLUID_A]
                 tau_g_solid = ctx.tau_g_table[SOLID]
-                tau_g = tau_g_fluid * (1.0 - phi_val) + tau_g_solid * phi_val
+                denom_tau = phi_val * tau_g_fluid + (1.0 - phi_val) * tau_g_solid
+                tau_g = (tau_g_fluid * tau_g_solid) / (denom_tau + 1e-12)
                 omega_g = 1.0 / tau_g
                 v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
                 temp = ctx.temp[i, j, k]
@@ -313,7 +314,7 @@ class LBMSimulator:
                 # フェーズ1: 体積ペナルティ法(VPM)で固体内部速度を剛体速度に拘束
                 phi_val = ctx.phi[i, j, k]
                 if phi_val > 0.0:
-                    u_solid = ti.Vector([0.0, 0.0, 0.0])  # 仮実装: 固定物体
+                    u_solid = ctx.u_solid[i, j, k]
                     ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
             else:
                 # 固体セルはゼロ(または壁温度)固定

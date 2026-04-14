@@ -38,12 +38,14 @@ class SimulationContext:
         self.cell_id = ti.field(dtype=ti.i32)
         self.sdf = ti.field(dtype=fp_dtype)
         self.phi = ti.field(dtype=fp_dtype)
+        self.closest_obj_id = ti.field(dtype=ti.i32)
         self.rho = ti.field(dtype=fp_dtype)
         self.temp = ti.field(dtype=fp_dtype)
         self.psi = ti.field(dtype=fp_dtype)
         self.S_g = ti.field(dtype=fp_dtype)
         
         self.v = ti.Vector.field(3, fp_dtype)
+        self.u_solid = ti.Vector.field(3, fp_dtype)
         self.F_int = ti.Vector.field(3, fp_dtype)
         
         # 突破策①：f_post と g_post を廃止し、old と new だけにする
@@ -75,8 +77,8 @@ class SimulationContext:
         grid = ti.root.dense(ti.ijk, (nx, ny, nz))
         
         # マクロ変数をまとめて配置
-        grid.place(self.cell_id, self.sdf, self.phi, self.rho, self.temp, self.psi, self.S_g)
-        grid.place(self.v, self.F_int)
+        grid.place(self.cell_id, self.sdf, self.phi, self.closest_obj_id, self.rho, self.temp, self.psi, self.S_g)
+        grid.place(self.v, self.u_solid, self.F_int)
         
         # 分布関数は方向(19)の次元を追加して配置
         dirs = grid.dense(ti.l, 19)

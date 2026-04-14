@@ -376,15 +376,20 @@ class IBManager:
                 self.vel[p] = v_c + v_rot
                 self.pos[p] += self.vel[p]
                 n = self.marker_normal[p]
-                dn = ti.Vector([
-                    omega[1]*n[2] - omega[2]*n[1],
-                    omega[2]*n[0] - omega[0]*n[2],
-                    omega[0]*n[1] - omega[1]*n[0]
-                ])
-                new_n = n + dn
-                nlen = ti.math.length(new_n)
-                if nlen > 1e-12:
-                    self.marker_normal[p] = new_n / nlen
+                omega_mag = ti.math.length(omega)
+                if omega_mag > 1e-12:
+                    k_axis = omega / omega_mag
+                    theta = omega_mag
+                    cos_t = ti.math.cos(theta)
+                    sin_t = ti.math.sin(theta)
+                    k_cross_n = ti.Vector([
+                        k_axis[1] * n[2] - k_axis[2] * n[1],
+                        k_axis[2] * n[0] - k_axis[0] * n[2],
+                        k_axis[0] * n[1] - k_axis[1] * n[0]
+                    ])
+                    k_dot_n = k_axis.dot(n)
+                    new_n = n * cos_t + k_cross_n * sin_t + k_axis * k_dot_n * (1.0 - cos_t)
+                    self.marker_normal[p] = new_n
                 
             elif o_type == 2:
                 # 回転 (Rotating): 指定された omega で強制回転
@@ -405,27 +410,43 @@ class IBManager:
     def compute_probe_heat_flux(self, ctx: ti.template(), k_fluid: ti.f32) -> ti.types.vector(2, ti.f32):
         sum_q = 0.0
         sum_area = 0.0
-        probe_dist = self.phase3_probe_distance_lbm
+        probe_dist_1 = self.phase3_probe_distance_lbm
+        probe_dist_2 = self.phase3_probe_distance_lbm * 2.0
         for p in range(self.num_points):
             obj_id = self.marker_obj_id[p]
             if self.obj_is_thermal[obj_id] != 0:
                 pos = self.pos[p]
                 normal = self.marker_normal[p]
-                probe_pos = pos + normal * probe_dist
-                t_probe = 0.0
-                base_i = int(ti.math.floor(probe_pos[0]))
-                base_j = int(ti.math.floor(probe_pos[1]))
-                base_k = int(ti.math.floor(probe_pos[2]))
+                probe_pos_1 = pos + normal * probe_dist_1
+                probe_pos_2 = pos + normal * probe_dist_2
+                t_probe_1 = 0.0
+                t_probe_2 = 0.0
+                base_i = int(ti.math.floor(probe_pos_1[0]))
+                base_j = int(ti.math.floor(probe_pos_1[1]))
+                base_k = int(ti.math.floor(probe_pos_1[2]))
                 for i in range(base_i - 1, base_i + 3):
                     for j in range(base_j - 1, base_j + 3):
                         for k in range(base_k - 1, base_k + 3):
                             if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
-                                dx = probe_pos[0] - float(i)
-                                dy = probe_pos[1] - float(j)
-                                dz = probe_pos[2] - float(k)
+                                dx = probe_pos_1[0] - float(i)
+                                dy = probe_pos_1[1] - float(j)
+                                dz = probe_pos_1[2] - float(k)
                                 weight = self.peskin_delta(dx) * self.peskin_delta(dy) * self.peskin_delta(dz)
-                                t_probe += ctx.temp[i, j, k] * weight
-                grad_t = (t_probe - self.marker_temp[p]) / (probe_dist + 1e-12)
+                                t_probe_1 += ctx.temp[i, j, k] * weight
+                base_i2 = int(ti.math.floor(probe_pos_2[0]))
+                base_j2 = int(ti.math.floor(probe_pos_2[1]))
+                base_k2 = int(ti.math.floor(probe_pos_2[2]))
+                for i in range(base_i2 - 1, base_i2 + 3):
+                    for j in range(base_j2 - 1, base_j2 + 3):
+                        for k in range(base_k2 - 1, base_k2 + 3):
+                            if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
+                                dx = probe_pos_2[0] - float(i)
+                                dy = probe_pos_2[1] - float(j)
+                                dz = probe_pos_2[2] - float(k)
+                                weight = self.peskin_delta(dx) * self.peskin_delta(dy) * self.peskin_delta(dz)
+                                t_probe_2 += ctx.temp[i, j, k] * weight
+                t_wall = self.marker_temp[p]
+                grad_t = (-3.0 * t_wall + 4.0 * t_probe_1 - t_probe_2) / (2.0 * probe_dist_1 + 1e-12)
                 q_local = -k_fluid * grad_t
                 sum_q += q_local * self.dA
                 sum_area += self.dA
@@ -439,30 +460,52 @@ class IBManager:
 
     @ti.kernel
     def update_sdf_and_phi(self, ctx: ti.template()):
+        eps = self.phase1_epsilon_lbm
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
-            ctx.sdf[i, j, k] = 1.0e6
-            ctx.phi[i, j, k] = 0.0
-
-        if self.num_objects > 0:
-            center = self.obj_center[0]
-            radius_lbm = self.obj_radius_lbm[0]
-            shape = self.obj_shape[0]
-            eps = self.phase1_epsilon_lbm
-
-            if shape == 1 and radius_lbm > 0.0:
-                for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            best_dist = 1.0e6
+            best_obj = -1
+            for obj_id in range(self.num_objects):
+                center = self.obj_center[obj_id]
+                radius_lbm = self.obj_radius_lbm[obj_id]
+                shape = self.obj_shape[obj_id]
+                if radius_lbm <= 0.0:
+                    continue
+                dist = 1.0e6
+                if shape == 0:
+                    dx = float(i) - center[0]
+                    dy = float(j) - center[1]
+                    dz = float(k) - center[2]
+                    dist = ti.math.sqrt(dx * dx + dy * dy + dz * dz) - radius_lbm
+                elif shape == 1:
                     dx = float(i) - center[0]
                     dz = float(k) - center[2]
-                    dist = ti.math.sqrt(dx * dx + dz * dz)
-                    sdf_val = dist - radius_lbm
-                    ctx.sdf[i, j, k] = sdf_val
+                    dist = ti.math.sqrt(dx * dx + dz * dz) - radius_lbm
+                if dist < best_dist:
+                    best_dist = dist
+                    best_obj = obj_id
 
-                    if sdf_val < -eps:
-                        ctx.phi[i, j, k] = 1.0
-                    elif sdf_val > eps:
-                        ctx.phi[i, j, k] = 0.0
-                    else:
-                        ctx.phi[i, j, k] = 0.5 * (1.0 - ti.math.sin(ti.math.pi * sdf_val / (2.0 * eps)))
+            ctx.sdf[i, j, k] = best_dist
+            ctx.closest_obj_id[i, j, k] = best_obj
+            if best_obj >= 0:
+                center = self.obj_center[best_obj]
+                r = ti.Vector([float(i) - center[0], float(j) - center[1], float(k) - center[2]])
+                omega = self.obj_omega[best_obj]
+                v_c = self.obj_vel[best_obj]
+                v_rot = ti.Vector([
+                    omega[1] * r[2] - omega[2] * r[1],
+                    omega[2] * r[0] - omega[0] * r[2],
+                    omega[0] * r[1] - omega[1] * r[0]
+                ])
+                ctx.u_solid[i, j, k] = v_c + v_rot
+            else:
+                ctx.u_solid[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+
+            if best_dist < -eps:
+                ctx.phi[i, j, k] = 1.0
+            elif best_dist > eps:
+                ctx.phi[i, j, k] = 0.0
+            else:
+                ctx.phi[i, j, k] = 0.5 * (1.0 - ti.math.sin(ti.math.pi * best_dist / (2.0 * eps)))
 
     @ti.kernel
     def apply_delta_force_to_velocity(self, ctx: ti.template()):
@@ -480,12 +523,12 @@ class IBManager:
 
     def step(self, ctx):
         self.update_sdf_and_phi(ctx)
-        self.clear_forces_and_sources(ctx)
         num_iterations = self.phase1_num_iterations
         if self.phase2_enable_iterative_thermal != 0:
             num_iterations = max(self.phase1_num_iterations, self.phase2_num_iterations)
 
         for it in range(num_iterations):
+            self.clear_forces_and_sources(ctx)
             self.interp_velocity_and_calc_force(ctx)
             if self.phase2_enable_iterative_thermal != 0:
                 clear_q = 1 if it == 0 else 0
