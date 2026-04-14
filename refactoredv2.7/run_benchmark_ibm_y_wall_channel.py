@@ -156,7 +156,7 @@ def verify_karman_vortex():
         Lx_p=state["L_domain"],
         U_inlet_p=state["U"],
         
-        max_time_p=15.0,              # カルマン渦が成長するまでの時間
+        max_time_p=20.0,              # カルマン渦が成長するまでの時間
         ramp_time_p=2.0,              # 衝撃波を防ぐソフトスタート
         vis_interval=100, 
         vti_export_interval=0, 
@@ -189,7 +189,7 @@ def verify_karman_vortex():
                     {
                         "shape": "cylinder",
                         "radius_p": state["L_ref"] / 2.0, # 直径から半径へ
-                        "center_p": [state["L_domain"] * 0.5, 0.0, state["L_domain"] * 0.15],
+                        "center_p": [state["L_domain"] * 0.51, 0.0, state["L_domain"] * 4 * 0.85],
                         "type": "fixed",
                         "temperature": 1.0
                     }
