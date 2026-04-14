@@ -1,0 +1,123 @@
+フェーズ2（共役熱伝達（CHT）と熱境界のシームレス化）の先行実装ですね。承知いたしました。
+曲面における熱伝達を階段状（Staircase）のノイズなしに高精度で解くためには、「物性値（緩和時間）の空間的なスムージング」と「熱量ソース項の厳密化」が必要です。 ※このフェーズ2は、フェーズ1で導入する指標関数 $\phi$ （流体で0.0、固体で1.0となる連続場）が存在することが前提となります。
+以下に具体的なコード改修手順を示します。
+Step 1: solver.py で熱拡散率（ $\tau_g$ ）をシームレスに繋ぐ
+現在のコードでは tau_g = ctx.tau_g_table[cid] のようにセルIDでパキッと切り替わっています。これを $\phi$ を使って滑らかに補間するように書き換えます。
+
+Python
+
+
+# solver.py の collide_and_stream カーネル内
+# 1. 温度場 g の緩和と移流 (統合) の部分を修正
+
+            if self.is_fluid(ctx, cid):
+                # ▼ 修正前
+                # tau_g = ctx.tau_g_table[cid]
+                # omega_g = 1.0 / tau_g
+                
+                # ▼ 修正後: 指標関数 φ を用いた熱拡散率（緩和時間）の連続化
+                phi_val = ctx.phi[i, j, k]
+                
+                # 流体と固体の基準となる tau_g を取得 (※IDは環境に合わせて設定)
+                tau_g_fluid = ctx.tau_g_table[FLUID_A] # 例: 水や空気
+                tau_g_solid = ctx.tau_g_table[SOLID]   # 例: 銅やアルミ
+                
+                # 調和平均(Harmonic)または算術平均(Arithmetic)で補間
+                # 界面での熱流束の連続性を保つには一般に調和平均や線形補間が使われます
+                tau_g = tau_g_fluid * (1.0 - phi_val) + tau_g_solid * phi_val
+                
+                omega_g = 1.0 / tau_g
+
+
+Step 2: solver.py の熱源ソース項（ $S_g$ ）の適用精度を上げる
+現在の熱の衝突演算では self.d3q19.w[d] * ctx.S_g[i, j, k] を足していますが、Guoのフォーシングスキームなどに倣い、緩和時間の影響（離散格子効果）を含めた形に微調整することで精度が向上します。
+
+Python
+
+
+# solver.py の collide_and_stream カーネル内
+# g_curr の計算部分を修正
+
+                for d in ti.static(range(19)):
+                    geq = self.d3q19.get_geq(temp, v_g, d)
+                    
+                    # ▼ 修正後: 緩和時間(omega_g)の影響を考慮した高精度なソース項付加
+                    S_g_term = (1.0 - 0.5 * omega_g) * self.d3q19.w[d] * ctx.S_g[i, j, k]
+                    
+                    g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + S_g_term
+
+
+Step 3: immersed_boundary.py の Thermal IBM を厳密化
+物体が「等温壁（Isothermal）」として働く場合、マーカー上で流体を指定温度に強制する必要があります。速度のIterative Forcingと同様に、温度も反復計算で誤差をゼロに追い込みます。
+（※なお、物体内部で熱伝導のみを行う純粋な「共役熱伝達（CHT）」の場合は、Step 1のスムージングだけで熱が伝わるため、このStep 3の熱量強制は不要です。ここでは等温壁を想定して実装します。）
+
+Python
+
+
+# immersed_boundary.py の IBManager クラスに追加・修正
+
+    @ti.kernel
+    def interp_temperature_and_calc_heat(self, ctx: ti.template()):
+        """温度の反復直接強制法（Iterative Thermal Forcing）"""
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            
+            # 熱源（等温壁など）として機能するオブジェクトのみ処理
+            if self.obj_is_thermal[obj_id] != 0:
+                p_pos = self.pos[p]
+                t_interp = 0.0
+
+                base_i = int(ti.math.floor(p_pos[0]))
+                base_j = int(ti.math.floor(p_pos[1]))
+                base_k = int(ti.math.floor(p_pos[2]))
+
+                # 流体温度の補間
+                for i in range(base_i - 1, base_i + 3):
+                    for j in range(base_j - 1, base_j + 3):
+                        for k in range(base_k - 1, base_k + 3):
+                            if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
+                                dist_x = p_pos[0] - float(i)
+                                dist_y = p_pos[1] - float(j)
+                                dist_z = p_pos[2] - float(k)
+                                weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
+                                t_interp += ctx.temp[i, j, k] * weight
+
+                # 反復計算用に、目標温度との差分を「追加の熱量」として蓄積する
+                # （1パス計算の場合は単なる代入ですが、反復の場合は += で誤差を埋めていきます）
+                self.marker_q[p] += (self.marker_temp[p] - t_interp)
+
+
+Step 4: メインループでの呼び出し順序の整理
+速度の反復強制（Phase 1）と熱の反復強制（Phase 2）を組み合わせる場合、step 関数内で両方を処理します。
+
+Python
+
+
+# immersed_boundary.py の step 関数
+
+    def step(self, ctx):
+        self.clear_forces_and_sources(ctx) 
+        
+        # 反復回数 (速度・温度共通で3〜4回程度)
+        num_iterations = 3
+        for it in range(num_iterations):
+            # --- 速度のForcing ---
+            self.interp_velocity_and_calc_force(ctx)
+            
+            # --- 温度のForcing ---
+            # marker_q を更新 (初回ループ前に marker_q をゼロクリアする処理が必要です)
+            self.interp_temperature_and_calc_heat(ctx)
+            
+            # Eulerianグリッド(F_int と S_g)への展開
+            self.spread_force(ctx)
+            
+            if it < num_iterations - 1:
+                self.apply_delta_force_to_velocity(ctx)
+                # ※温度に関しても仮更新 (apply_delta_heat_to_temp) を行うと収束が早まります
+                
+        self.update_objects_and_markers()
+
+
+期待される効果
+Staircase（階段状）ノイズの消失: 曲面壁から流体へ熱が伝わる際、境界格子がギザギザであっても、$\tau_g$ のスムージングにより温度等高線（コンター）が非常に美しい同心円（または曲面）を描くようになります。
+Nu数の精度向上: マーカー上の温度誤差が反復計算により実質的にゼロになるため、後から壁面近傍の温度勾配を取得する際、理論解に極めて近いNu数が得られるようになります。
