@@ -8,6 +8,7 @@ _log = get_logger(__name__)
 # --- 形状生成ヘルパー関数 ---
 def create_sphere_markers(radius_lbm, center_lbm, num_samples):
     points = []
+    normals = []
     phi = math.pi * (3. - math.sqrt(5.))
     for i in range(num_samples):
         y = 1 - (i / float(num_samples - 1)) * 2 
@@ -16,7 +17,9 @@ def create_sphere_markers(radius_lbm, center_lbm, num_samples):
         x = math.cos(theta) * radius_at_y
         z = math.sin(theta) * radius_at_y
         points.append([center_lbm[0] + radius_lbm * x, center_lbm[1] + radius_lbm * y, center_lbm[2] + radius_lbm * z])
-    return np.array(points, dtype=np.float32)
+        n_norm = math.sqrt(x * x + y * y + z * z) + 1e-12
+        normals.append([x / n_norm, y / n_norm, z / n_norm])
+    return np.array(points, dtype=np.float32), np.array(normals, dtype=np.float32)
 
 def create_cylinder_markers(radius_lbm, center_lbm, ny):
     """Y方向に貫通する円柱のマーカーを生成 (2D的なシミュレーション用)"""
@@ -25,12 +28,14 @@ def create_cylinder_markers(radius_lbm, center_lbm, ny):
     theta = np.linspace(0, 2*np.pi, num_circumference, endpoint=False)
     
     points = []
+    normals = []
     for j in range(ny):
         for t in theta:
             x = center_lbm[0] + radius_lbm * np.cos(t)
             z = center_lbm[2] + radius_lbm * np.sin(t)
             points.append([x, float(j) + 0.5, z])
-    return np.array(points, dtype=np.float32)
+            normals.append([np.cos(t), 0.0, np.sin(t)])
+    return np.array(points, dtype=np.float32), np.array(normals, dtype=np.float32)
 
 
 def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
@@ -39,6 +44,7 @@ def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
     指定された壁の厚み (wall_thickness_lbm) の内部空間「すべて」にマーカーを敷き詰める（Volume IBM）。
     """
     points = []
+    normals = []
     
     # 敷き詰めるマーカーの間隔 (1.0セル間隔だとLBM格子と完全に一致してしまうため、
     # わずかにずらすか、0.8セル間隔などで密に配置するのが一般的です)
@@ -65,8 +71,12 @@ def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
         for x in x_coords:
             for z in z_coords:
                 points.append([x, y, z])
+                if side == "lower":
+                    normals.append([0.0, 1.0, 0.0])
+                else:
+                    normals.append([0.0, -1.0, 0.0])
                 
-    return np.array(points, dtype=np.float32)
+    return np.array(points, dtype=np.float32), np.array(normals, dtype=np.float32)
 
 # --- IBM マネージャ ---
 @ti.data_oriented
@@ -82,6 +92,9 @@ class IBManager:
         phase2_num_iterations=3,
         phase2_heat_relax=1.0,
         phase2_enable_iterative_thermal=True,
+        phase3_probe_distance_lbm=1.5,
+        phase3_enable_fsi_rotation=True,
+        phase3_gravity_lbm=(0.0, 0.0, -9.8e-4),
     ):
         """
         objects_data: 辞書のリスト。各物体のメタデータを含む
@@ -96,6 +109,7 @@ class IBManager:
         self.vel = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
         self.force = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
         self.marker_obj_id = ti.field(dtype=ti.i32, shape=total_points) # 各マーカーが属する物体ID
+        self.marker_normal = ti.Vector.field(3, dtype=fp_dtype, shape=total_points)
 
         # 物体ごとのメタデータ
         self.obj_type = ti.field(dtype=ti.i32, shape=self.num_objects) # 0: fixed, 1: free, 2: rotating
@@ -105,6 +119,8 @@ class IBManager:
         self.obj_omega = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects) # 角速度ベクトル
         self.obj_shape = ti.field(dtype=ti.i32, shape=self.num_objects)  # 0:sphere, 1:cylinder, 2:y_plate
         self.obj_radius_lbm = ti.field(dtype=fp_dtype, shape=self.num_objects)
+        self.obj_inertia = ti.field(dtype=fp_dtype, shape=self.num_objects)
+        self.obj_torque = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
         
         # 力計測用 (毎ステップの抗力・揚力を記録)
         self.obj_hydro_force = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
@@ -113,6 +129,11 @@ class IBManager:
         self.phase2_num_iterations = max(1, int(phase2_num_iterations))
         self.phase2_heat_relax = float(phase2_heat_relax)
         self.phase2_enable_iterative_thermal = 1 if phase2_enable_iterative_thermal else 0
+        self.phase3_probe_distance_lbm = float(phase3_probe_distance_lbm)
+        self.phase3_enable_fsi_rotation = 1 if phase3_enable_fsi_rotation else 0
+        self.phase3_gravity_lbm = ti.Vector(
+            [float(phase3_gravity_lbm[0]), float(phase3_gravity_lbm[1]), float(phase3_gravity_lbm[2])]
+        )
 
         #  温度場 (Thermal IBM) 用のフィールド
         self.marker_temp = ti.field(dtype=fp_dtype, shape=total_points)     # 各マーカーの目標温度
@@ -128,6 +149,7 @@ class IBManager:
         pos_np = np.zeros((self.num_points, 3), dtype=np.float32)
         vel_np = np.zeros((self.num_points, 3), dtype=np.float32)
         marker_id_np = np.zeros(self.num_points, dtype=np.int32)
+        normal_np = np.zeros((self.num_points, 3), dtype=np.float32)
         
         type_np = np.zeros(self.num_objects, dtype=np.int32)
         mass_np = np.zeros(self.num_objects, dtype=np.float32)
@@ -136,6 +158,7 @@ class IBManager:
         omega_np = np.zeros((self.num_objects, 3), dtype=np.float32)
         shape_np = np.zeros(self.num_objects, dtype=np.int32)
         radius_np = np.zeros(self.num_objects, dtype=np.float32)
+        inertia_np = np.zeros(self.num_objects, dtype=np.float32)
 
         temp_obj_np = np.zeros(self.num_objects, dtype=np.float32)
         is_thermal_np = np.zeros(self.num_objects, dtype=np.int32)
@@ -144,6 +167,7 @@ class IBManager:
         current_idx = 0
         for obj_id, obj in enumerate(objects_data):
             markers = obj['markers']
+            marker_normals = obj.get("marker_normals", None)
             n_markers = len(markers)
 
             # ▼ 追加: 温度設定の読み込み
@@ -155,6 +179,10 @@ class IBManager:
                 is_thermal_np[obj_id] = 0 # 熱源ではない(断熱)
             
             pos_np[current_idx : current_idx + n_markers] = markers
+            if marker_normals is not None and len(marker_normals) == n_markers:
+                normal_np[current_idx : current_idx + n_markers] = marker_normals
+            else:
+                normal_np[current_idx : current_idx + n_markers] = np.array([[0.0, 1.0, 0.0]], dtype=np.float32)
             vel_np[current_idx : current_idx + n_markers] = obj.get('v0', [0,0,0])
             marker_id_np[current_idx : current_idx + n_markers] = obj_id
             
@@ -172,6 +200,14 @@ class IBManager:
             else:
                 shape_np[obj_id] = 0
             radius_np[obj_id] = float(obj.get("radius_lbm", 0.0))
+            mass_val = float(obj.get('mass', 1e9))
+            radius_val = float(obj.get("radius_lbm", 0.0))
+            if shape_np[obj_id] == 1:
+                inertia_np[obj_id] = max(1e-12, 0.5 * mass_val * radius_val * radius_val)
+            elif shape_np[obj_id] == 0:
+                inertia_np[obj_id] = max(1e-12, 0.4 * mass_val * radius_val * radius_val)
+            else:
+                inertia_np[obj_id] = max(1e-12, mass_val)
             
             mass_np[obj_id] = obj.get('mass', 1e9)
             center_np[obj_id] = obj.get('center', [0,0,0])
@@ -183,6 +219,7 @@ class IBManager:
         self.pos.from_numpy(pos_np)
         self.vel.from_numpy(vel_np)
         self.marker_obj_id.from_numpy(marker_id_np)
+        self.marker_normal.from_numpy(normal_np)
         self.obj_type.from_numpy(type_np)
         self.obj_mass.from_numpy(mass_np)
         self.obj_center.from_numpy(center_np)
@@ -190,6 +227,7 @@ class IBManager:
         self.obj_omega.from_numpy(omega_np)
         self.obj_shape.from_numpy(shape_np)
         self.obj_radius_lbm.from_numpy(radius_np)
+        self.obj_inertia.from_numpy(inertia_np)
         self.obj_temp.from_numpy(temp_obj_np)
         self.obj_is_thermal.from_numpy(is_thermal_np)
         self.marker_temp.from_numpy(marker_temp_np)
@@ -289,22 +327,32 @@ class IBManager:
 
     @ti.kernel
     def update_objects_and_markers(self):
-        # 1. 各物体が受ける流体力を集計
+        # 1. 各物体が受ける流体力・流体トルクを集計
         for obj_id in range(self.num_objects):
             self.obj_hydro_force[obj_id] = ti.Vector([0.0, 0.0, 0.0])
+            self.obj_torque[obj_id] = ti.Vector([0.0, 0.0, 0.0])
             
         for p in range(self.num_points):
             obj_id = self.marker_obj_id[p]
-            # f_ib (マーカーの力) は「流体を押す力」なので、物体が受ける力はその逆(マイナス)
-            self.obj_hydro_force[obj_id] -= self.force[p] * self.dA
+            f_fluid = -self.force[p] * self.dA
+            self.obj_hydro_force[obj_id] += f_fluid
+            r = self.pos[p] - self.obj_center[obj_id]
+            self.obj_torque[obj_id] += ti.Vector([
+                r[1] * f_fluid[2] - r[2] * f_fluid[1],
+                r[2] * f_fluid[0] - r[0] * f_fluid[2],
+                r[0] * f_fluid[1] - r[1] * f_fluid[0],
+            ])
             
-        # 2. 自由運動(Free)オブジェクトの重心運動を更新
+        # 2. 自由運動(Free)オブジェクトの重心運動・回転運動を更新
         for obj_id in range(self.num_objects):
             if self.obj_type[obj_id] == 1: # free
-                acc = self.obj_hydro_force[obj_id] / self.obj_mass[obj_id]
-                # ※重力が必要ならここで足す
+                ext_force = self.phase3_gravity_lbm * self.obj_mass[obj_id]
+                total_force = self.obj_hydro_force[obj_id] + ext_force
+                acc = total_force / self.obj_mass[obj_id]
                 self.obj_vel[obj_id] += acc
                 self.obj_center[obj_id] += self.obj_vel[obj_id]
+                if self.phase3_enable_fsi_rotation != 0:
+                    self.obj_omega[obj_id] += self.obj_torque[obj_id] / self.obj_inertia[obj_id]
 
         # 3. 各マーカーの座標と速度の更新
         for p in range(self.num_points):
@@ -316,9 +364,27 @@ class IBManager:
                 self.vel[p] = ti.Vector([0.0, 0.0, 0.0])
                 
             elif o_type == 1:
-                # 自由 (Free): 平行移動のみ (今は回転を省略)
-                self.pos[p] += self.obj_vel[obj_id]
-                self.vel[p] = self.obj_vel[obj_id]
+                v_c = self.obj_vel[obj_id]
+                omega = self.obj_omega[obj_id]
+                center = self.obj_center[obj_id]
+                r = self.pos[p] - center
+                v_rot = ti.Vector([
+                    omega[1]*r[2] - omega[2]*r[1],
+                    omega[2]*r[0] - omega[0]*r[2],
+                    omega[0]*r[1] - omega[1]*r[0]
+                ])
+                self.vel[p] = v_c + v_rot
+                self.pos[p] += self.vel[p]
+                n = self.marker_normal[p]
+                dn = ti.Vector([
+                    omega[1]*n[2] - omega[2]*n[1],
+                    omega[2]*n[0] - omega[0]*n[2],
+                    omega[0]*n[1] - omega[1]*n[0]
+                ])
+                new_n = n + dn
+                nlen = ti.math.length(new_n)
+                if nlen > 1e-12:
+                    self.marker_normal[p] = new_n / nlen
                 
             elif o_type == 2:
                 # 回転 (Rotating): 指定された omega で強制回転
@@ -334,6 +400,36 @@ class IBManager:
                 ])
                 self.pos[p] += v_rot
                 self.vel[p] = v_rot
+
+    @ti.kernel
+    def compute_probe_heat_flux(self, ctx: ti.template(), k_fluid: ti.f32) -> ti.types.vector(2, ti.f32):
+        sum_q = 0.0
+        sum_area = 0.0
+        probe_dist = self.phase3_probe_distance_lbm
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            if self.obj_is_thermal[obj_id] != 0:
+                pos = self.pos[p]
+                normal = self.marker_normal[p]
+                probe_pos = pos + normal * probe_dist
+                t_probe = 0.0
+                base_i = int(ti.math.floor(probe_pos[0]))
+                base_j = int(ti.math.floor(probe_pos[1]))
+                base_k = int(ti.math.floor(probe_pos[2]))
+                for i in range(base_i - 1, base_i + 3):
+                    for j in range(base_j - 1, base_j + 3):
+                        for k in range(base_k - 1, base_k + 3):
+                            if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
+                                dx = probe_pos[0] - float(i)
+                                dy = probe_pos[1] - float(j)
+                                dz = probe_pos[2] - float(k)
+                                weight = self.peskin_delta(dx) * self.peskin_delta(dy) * self.peskin_delta(dz)
+                                t_probe += ctx.temp[i, j, k] * weight
+                grad_t = (t_probe - self.marker_temp[p]) / (probe_dist + 1e-12)
+                q_local = -k_fluid * grad_t
+                sum_q += q_local * self.dA
+                sum_area += self.dA
+        return ti.Vector([sum_q, sum_area])
 
     @ti.kernel
     def clear_forces_and_sources(self, ctx: ti.template()):

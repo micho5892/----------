@@ -284,9 +284,31 @@ class Analytics:
             q_wall_p
         ])
 
-    def get_local_Nu(self, ctx, k_target, log_thermal_slice=False):
+    def get_local_Nu(self, ctx, k_target, ibm=None, log_thermal_slice=False):
         # ベンチマーク名で呼び出すカーネルを分岐
-        if self.cfg.benchmark_name == "parallel_plates_ibm":
+        if self.cfg.benchmark_name == "parallel_plates_ibm" and ibm is not None:
+            k_fluid = float(self.k_table[0])
+            probe_pack = ibm.compute_probe_heat_flux(ctx, k_fluid)
+            sum_q = float(probe_pack[0])
+            sum_area = float(probe_pack[1])
+            q_wall_p = sum_q / sum_area if sum_area > 0.0 else 0.0
+
+            # 断面バルク温度は既存カーネルを流用して整合性を維持
+            base_pack = self._get_local_Nu_ibm_channel_kernel(
+                ctx, k_target, self.cfg.nx, self.cfg.ny, self.cfg.dx,
+                self.cfg.delta_T_ref, self.cfg.T_inlet_p
+            )
+            T_bulk_p = float(base_pack[3])
+            T_wall_actual_p = float(base_pack[4])
+            denom = T_wall_actual_p - T_bulk_p
+            h_local = q_wall_p / denom if abs(denom) > 1e-12 else 0.0
+            k_ref = k_fluid
+            nu = h_local * self.nu_l_ref_p / (k_ref + 1e-12)
+            if log_thermal_slice:
+                _log.info("T_bulk: %.6f, T_wall: %.6f", T_bulk_p, T_wall_actual_p)
+                _log.info("q_wall_p(probe): %.6e", q_wall_p)
+            return nu
+        elif self.cfg.benchmark_name == "parallel_plates_ibm":
             pack = self._get_local_Nu_ibm_channel_kernel(
                 ctx, k_target, self.cfg.nx, self.cfg.ny, self.cfg.dx,
                 self.cfg.delta_T_ref, self.cfg.T_inlet_p

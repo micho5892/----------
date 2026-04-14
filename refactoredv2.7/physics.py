@@ -165,7 +165,7 @@ class ImmersedBoundaryModel(PhysicsModel):
             
             if shape == "cylinder":
                 # Y方向貫通円柱
-                markers = create_cylinder_markers(r_lbm, center_lbm, cfg.ny)
+                markers, marker_normals = create_cylinder_markers(r_lbm, center_lbm, cfg.ny)
                 self.dA_lbm = (2.0 * math.pi * r_lbm * float(cfg.ny)) / len(markers)
 
             elif shape == "y_plate":
@@ -175,7 +175,7 @@ class ImmersedBoundaryModel(PhysicsModel):
                 i_max_excl = int(obj.get("i_max_excl_lbm", cfg.nx - wall_th))
                 
                 # ▼ 変更: 平面のY座標ではなく、厚みと方向を渡してブロック状のマーカーを生成
-                markers = create_y_plate_markers(cfg.nz, wall_th, side, i_min, i_max_excl, cfg.ny)
+                markers, marker_normals = create_y_plate_markers(cfg.nz, wall_th, side, i_min, i_max_excl, cfg.ny)
                 
                 if len(markers) == 0:
                     raise ValueError(
@@ -198,7 +198,7 @@ class ImmersedBoundaryModel(PhysicsModel):
             else:
                 surface_area_lbm = 4.0 * math.pi * (r_lbm ** 2)
                 num_points = int(surface_area_lbm / (0.8 ** 2))
-                markers = create_sphere_markers(r_lbm, center_lbm, num_points)
+                markers, marker_normals = create_sphere_markers(r_lbm, center_lbm, num_points)
                 self.dA_lbm = surface_area_lbm / num_points
             
             parsed_obj = {
@@ -210,6 +210,7 @@ class ImmersedBoundaryModel(PhysicsModel):
                 "omega": obj.get("omega_lbm", [0,0,0]),
                 "shape": shape,
                 "radius_lbm": r_lbm,
+                "marker_normals": marker_normals,
             }
             if "temperature" in obj:
                 parsed_obj["temperature"] = float(obj["temperature"])
@@ -221,6 +222,9 @@ class ImmersedBoundaryModel(PhysicsModel):
         phase2_num_iterations = ibm_cfg.get("phase2_num_iterations", 3)
         phase2_heat_relax = ibm_cfg.get("phase2_heat_relax", 1.0)
         phase2_enable_iterative_thermal = ibm_cfg.get("phase2_enable_iterative_thermal", True)
+        phase3_probe_distance_lbm = ibm_cfg.get("phase3_probe_distance_lbm", 1.5)
+        phase3_enable_fsi_rotation = ibm_cfg.get("phase3_enable_fsi_rotation", True)
+        phase3_gravity_lbm = ibm_cfg.get("phase3_gravity_lbm", [0.0, 0.0, -9.8e-4])
         self.ibm = IBManager(
             fp_dtype,
             parsed_objects,
@@ -231,6 +235,9 @@ class ImmersedBoundaryModel(PhysicsModel):
             phase2_num_iterations=phase2_num_iterations,
             phase2_heat_relax=phase2_heat_relax,
             phase2_enable_iterative_thermal=phase2_enable_iterative_thermal,
+            phase3_probe_distance_lbm=phase3_probe_distance_lbm,
+            phase3_enable_fsi_rotation=phase3_enable_fsi_rotation,
+            phase3_gravity_lbm=phase3_gravity_lbm,
         )
         
         # --- 毎ステップの力を記録するCSVの準備 ---

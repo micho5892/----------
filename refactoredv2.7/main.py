@@ -270,6 +270,11 @@ def run_simulation(**kwargs):
     bc_manager = BoundaryManager(sim.d3q19, cfg)
     physics_manager = PhysicsManager(sim.d3q19, cfg)
     analytics = Analytics(sim.d3q19, cfg)
+    ibm_runtime = None
+    for _model in physics_manager.models:
+        if hasattr(_model, "ibm"):
+            ibm_runtime = _model.ibm
+            break
     sim.init_fields(ctx)
     if benchmark in ("parallel_plates", "parallel_plates_ibm"):
         logger.info(
@@ -353,7 +358,7 @@ def run_simulation(**kwargs):
             if benchmark in ("parallel_plates", "parallel_plates_ibm"):
                 k_target = int(cfg.nz * 0.15)
                 local_nu = analytics.get_local_Nu(
-                    ctx, k_target, log_thermal_slice=True
+                    ctx, k_target, ibm=ibm_runtime, log_thermal_slice=True
                 )
                 local_t = temp_np[cfg.nx//2, cfg.ny//2, k_target]
                 

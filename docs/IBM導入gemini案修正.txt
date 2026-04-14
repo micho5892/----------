@@ -1,0 +1,150 @@
+フェーズ3までの実装、本当にお疲れ様でした！Taichiのデータ構造を駆使して、移動境界・VPM・反復直接強制法・DDF共役熱伝達を全て統合したのは見事としか言いようがありません。一気に最先端のLBMシミュレータに進化しましたね。
+
+しかしご自身の分析通り、現在のコードには「固定円柱のみを想定した仮処理」や「反復計算・運動方程式の近似（甘い部分）」が残っています。これを**本格的なFSI（流体構造連成）および高精度熱流体ソルバとして完成させるための、具体的な修正手順**を優先度順に解説します。
+
+---
+
+### 🚨 優先度 特大：計算が爆発する致命的な構造の修正
+
+現在の `immersed_boundary.py` の `step` 関数には、反復直接強制法（Iterative Direct Forcing）における**重大な論理エラー**が潜んでいます。
+
+現在のコードでは、反復ループの「外」で力をゼロクリアし、ループ内で `ctx.F_int[i, j, k] += f_ib * weight` (`spread_force`) を行っています。これでは**反復するたびに前のイテレーションの力が累積し、数ステップで流速が無限大に発散**してしまいます。
+
+#### 修正：イテレーションごとのフィールドリセット
+毎回のイテレーションは「現在の仮速度場から、目標速度にするための『全必要力』を再計算する」プロセスです。したがって、展開先である `F_int` と `S_g` は**ループの先頭で毎回ゼロクリア**しなければなりません。
+
+```python
+# immersed_boundary.py の step 関数を修正
+    def step(self, ctx):
+        self.update_sdf_and_phi(ctx)
+        
+        num_iterations = self.phase1_num_iterations
+        if self.phase2_enable_iterative_thermal != 0:
+            num_iterations = max(self.phase1_num_iterations, self.phase2_num_iterations)
+
+        for it in range(num_iterations):
+            # ★ココに移動: 毎イテレーション Eulerian 力・熱場をクリアする
+            self.clear_forces_and_sources(ctx)
+
+            self.interp_velocity_and_calc_force(ctx)
+            if self.phase2_enable_iterative_thermal != 0:
+                # 反復ごとに累積誤差をリセットするなら clear_q=1 とするロジックも見直し推奨です
+                clear_q = 1 if it == 0 else 0 
+                self.interp_temperature_and_calc_heat(ctx, clear_q)
+            
+            self.spread_force(ctx)
+            
+            if it < num_iterations - 1:
+                self.apply_delta_force_to_velocity(ctx)
+                if self.phase2_enable_iterative_thermal != 0:
+                    self.apply_delta_heat_to_temperature(ctx, self.phase2_heat_relax)
+
+        self.update_objects_and_markers()
+```
+
+---
+
+### 優先度 大：フェーズ1 (VPMとSDF) の複数オブジェクト・動的化
+
+現在は「先頭オブジェクト(0番)」が「円柱」であることしか想定していません。これを一般化します。
+
+#### 1. SDFの合成（Constructive Solid Geometry）
+すべての物体の SDF を計算し、`ti.math.min` を使って空間全体で「最も近い物体までの距離」を合成します。
+
+```python
+# immersed_boundary.py の update_sdf_and_phi
+    @ti.kernel
+    def update_sdf_and_phi(self, ctx: ti.template()):
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            ctx.sdf[i, j, k] = 1.0e6
+            ctx.phi[i, j, k] = 0.0
+
+        eps = self.phase1_epsilon_lbm
+        
+        # 全オブジェクトについてループ
+        for obj_id in range(self.num_objects):
+            center = self.obj_center[obj_id]
+            radius_lbm = self.obj_radius_lbm[obj_id]
+            shape = self.obj_shape[obj_id]
+            
+            if radius_lbm > 0.0:
+                for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+                    dist = 1.0e6
+                    if shape == 0: # Sphere
+                        dist = ti.math.sqrt((i-center[0])**2 + (j-center[1])**2 + (k-center[2])**2) - radius_lbm
+                    elif shape == 1: # Cylinder (Y-axis)
+                        dist = ti.math.sqrt((i-center[0])**2 + (k-center[2])**2) - radius_lbm
+                    
+                    # 最も近いSDFを採用
+                    ti.atomic_min(ctx.sdf[i, j, k], dist)
+
+        # 最終的なSDFからφを一括計算
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            sdf_val = ctx.sdf[i, j, k]
+            if sdf_val < -eps:
+                ctx.phi[i, j, k] = 1.0
+            elif sdf_val > eps:
+                ctx.phi[i, j, k] = 0.0
+            else:
+                ctx.phi[i, j, k] = 0.5 * (1.0 - ti.math.sin(ti.math.pi * sdf_val / (2.0 * eps)))
+```
+
+#### 2. VPMに「剛体の並進＋回転速度」を反映
+`solver.py` の `update_macro` にある `u_solid = [0,0,0]` のままでは、物体が動いても内部の流体が追従しません。本来はSDFの計算時に「各セルがどのオブジェクトに属するか（`closest_obj_id`）」を保存しておき、その物体の `obj_vel` と `obj_omega` から局所的な剛体速度 $\mathbf{u} = \mathbf{v}_c + \mathbf{\omega} \times \mathbf{r}$ を算出して代入する必要があります。
+*(※実装がやや重くなるため、まずはFSIで物体を動かす段階になったら `ctx.phi` と同時に `ctx.closest_obj_id` も計算するように拡張してください。)*
+
+---
+
+### 優先度 中：フェーズ3 (Nu数と回転FSI) の高精度化
+
+#### 1. Nu評価を「2次精度」へ格上げ
+現在の `compute_probe_heat_flux` は一次差分 $\frac{T_{probe} - T_{wall}}{L}$ です。これでは $\Delta x$ の解像度依存性が強く出ます。壁面近傍の温度境界層は曲線（二次関数的）を描くため、**「壁上(0.0)」「距離 $L$」「距離 $2L$」の3点を通る二次関数**をフィッティングし、壁面での微分係数を取り出すのがIBMにおける高精度Nu数算出の定石です。
+
+```python
+# 概念コード (immersed_boundary.py の compute_probe_heat_flux 内)
+    probe_dist_1 = self.phase3_probe_distance_lbm
+    probe_dist_2 = self.phase3_probe_distance_lbm * 2.0
+    
+    # ... プローブ1 (t_probe_1) と プローブ2 (t_probe_2) の補間温度を取得 ...
+    
+    # 3点前方差分 (Lagrange補間微分): f'(0) = (-3*f(0) + 4*f(h) - f(2h)) / (2h)
+    T_w = self.marker_temp[p]
+    grad_t = (-3.0 * T_w + 4.0 * t_probe_1 - t_probe_2) / (2.0 * probe_dist_1)
+    
+    q_local = -k_fluid * grad_t
+```
+
+#### 2. 法線の回転をロドリゲスの公式（Rodrigues' rotation formula）へ
+現在の `new_n = n + dn` (微小回転の近似) は、大きく回転し続けると法線ベクトルが歪んでいきます。任意軸周りの回転を厳密に計算するには以下を用います。
+
+```python
+# immersed_boundary.py の update_objects_and_markers 内
+                # omega ベクトルから回転軸 k と 回転角 theta を分離
+                omega_mag = ti.math.length(omega)
+                if omega_mag > 1e-12:
+                    k_axis = omega / omega_mag
+                    theta = omega_mag # (dt=1.0前提)
+                    
+                    # ロドリゲスの回転公式
+                    cos_t = ti.math.cos(theta)
+                    sin_t = ti.math.sin(theta)
+                    n = self.marker_normal[p]
+                    k_cross_n = ti.Vector([
+                        k_axis[1]*n[2] - k_axis[2]*n[1],
+                        k_axis[2]*n[0] - k_axis[0]*n[2],
+                        k_axis[0]*n[1] - k_axis[1]*n[0]
+                    ])
+                    k_dot_n = k_axis.dot(n)
+                    
+                    # 厳密な回転後の法線
+                    new_n = n * cos_t + k_cross_n * sin_t + k_axis * k_dot_n * (1.0 - cos_t)
+                    self.marker_normal[p] = new_n
+```
+
+---
+
+### その他の微調整（フェーズ2関連）
+* **`tau_g` の補間方法:** 現在の線形補間でも動きますが、金属(熱伝導率大)と空気(小)のCHTを解く場合、熱抵抗の直列つなぎを模倣する**「調和平均（Harmonic mean）」**にすると、界面での熱流束（温度勾配の折れ曲がり）がより物理的に正確になります。
+  $\tau_{g, eff} = \frac{\tau_{fluid} \cdot \tau_{solid}}{\phi \cdot \tau_{fluid} + (1-\phi) \cdot \tau_{solid}}$
+
+まずは、計算を根本から破壊する**`step` 関数内の `clear_forces_and_sources` の移動**と、**SDFの複数オブジェクト化**から手をつけてみてください。ここが安定すれば、美しいFSIと熱伝達の連成が動作するはずです！
