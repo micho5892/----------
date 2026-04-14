@@ -173,7 +173,7 @@ def run_optimize(cfg: dict) -> dict:
 
     reg = float(cfg.get("regularization", 1e-6))
     targets = cfg.get("targets") or {}
-    target_reg = float(cfg.get("target_regularization", 0.0))
+    target_reg = float(cfg.get("target_regularization", 1.0))
     weights = cfg.get("range_weights") or {}
     free_keys = [k for k in PRIMARY_PARAM_NAMES if k not in fixed]
 

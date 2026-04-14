@@ -11,7 +11,7 @@ _log = get_logger(__name__)
 
 
 
-def verify_parallel_plates():
+def verify_parallel_plates(target_Re=100.0):
     print("\n" + "="*60)
     print(" 1. 平行平板チャネル層流 (Nu=7.54) と 厳密解の検証")
     print("="*60)
@@ -31,15 +31,16 @@ def verify_parallel_plates():
             "u_lbm": 0.05,         # LBM空間での最大流速 (マッハ数制限をクリア)
         },
         "ranges": {
-            "Re": {"min": 50, "max": 200},
+            "Re": {"min": 50, "max": 2000},
             "tau_f マージン": {"min": 0.02, "max": 2.0},
             "tau_gf マージン": {"min": 0.02, "max": 2.0},
         },
         "targets": {
-            "Re": {"value": 100.0, "weight": 1.0}, # 層流
+            "Re": {"value": target_Re, "weight": 1.0},
         },
+        "target_regularization": 1,
         "regularization": 1.0e-3,
-        "maxiter": 5000,
+        "maxiter": 30000,
     }
 
     result = run_optimize(config_channel)
@@ -57,7 +58,8 @@ def verify_parallel_plates():
         fp_dtype="float32",
         steady_detection=True,        # 定常状態を自動検知して終了
         steady_window_p=2.5,
-        steady_tolerance=0.01,
+        steady_tolerance=0.005,
+        steady_extra_p = 3.0,
         state=state,
         artifact_parent=artifact_parent,
         periodic_x=True,
@@ -69,11 +71,11 @@ def verify_parallel_plates():
         U_inlet_p=state["U"],
         
         max_time_p=20.0, 
-        ramp_time_p=1.0,
+        ramp_time_p=2.0,
         vis_interval=100, vti_export_interval=0,
 
         sponge_thickness=40.0,
-        sponge_strength_decay_start_p=3.0,
+        sponge_strength_decay_start_p=4.0,
         sponge_strength_decay_duration_p=5.0,
         
         # 最適化された物性値を各IDへマッピング
@@ -206,7 +208,8 @@ def verify_karman_vortex():
 
 if __name__ == "__main__":
     # 1. Nu=7.54 と速度・温度プロファイルの検証
-    # verify_parallel_plates()
+    for target_Re in [200.0, 300.0, 400.0, 500.0, 700.0, 900.0, 1000.0]:
+        verify_parallel_plates(target_Re)
     
     # 2. カルマン渦の検証
-    verify_karman_vortex()
+    # verify_karman_vortex()

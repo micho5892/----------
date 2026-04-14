@@ -273,7 +273,7 @@ def plot_poiseuille_validation(y_coords, w_fluid, t_fluid, U_inlet, out_dir, T_w
     plot_path = os.path.join(out_dir, "Poiseuille_Thermal_Validation.png")
     plt.savefig(plot_path, dpi=300)
     print(f"\n[SUCCESS] Validation plot saved to: {plot_path}")
-    plt.show()
+    plt.show(block=False)
 
 def run_channel_benchmark(artifact_parent=None):
     """
