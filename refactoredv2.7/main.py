@@ -119,6 +119,7 @@ class AsymptoticSteadyDetector:
         # 4. 判定ロジック
         if a >= -1e-6:
             # a が正またはゼロに近い = まだ直線的に成長中で予測不可能
+            self.is_steady = False
             return False, "Developing..."
 
         # 漸近予測が有効な場合
@@ -417,27 +418,35 @@ def run_simulation(**kwargs):
             elif benchmark == "rotating_cylinder":
                 pass
 
+            if detector_v is not None and detector_t is not None:
+                is_v_steady, msg_v = detector_v.update(monitor_val_v)
+                is_t_steady, msg_t = detector_t.update(monitor_val_t)
+                joint_steady = is_v_steady and is_t_steady
+
+                if joint_steady and global_steady_time_p is None:
+                    global_steady_time_p = current_time_p
+                    logger.info(f"[SUCCESS] Flow AND Thermal steady state detected at t = {current_time_p:.3f} s!")
+                    logger.info(f"[INFO] Simulation will continue for another {steady_extra_p:.3f} s to record data.")
+                elif (not joint_steady) and global_steady_time_p is not None:
+                    logger.info(
+                        f"[INFO] Joint steady lost (Developing again) at t = {current_time_p:.3f} s. "
+                        f"ETA target reset to max_time_p = {max_time_p:.3f} s; after next joint steady, "
+                        f"will wait {steady_extra_p:.3f} s again."
+                    )
+                    global_steady_time_p = None
+
+                status_str = f"[V:{msg_v} T:{msg_t}]"
+            else:
+                status_str = "[MaxTime]"
+
             elapsed_wall = time.time() - start_wall_time
             target_time_p = max_time_p
             if global_steady_time_p is not None:
                 target_time_p = min(max_time_p, global_steady_time_p + steady_extra_p)
-                
+
             rem_time_p = target_time_p - current_time_p
             eta_sec = (elapsed_wall / (current_time_p + 1e-12)) * rem_time_p
             eta_str = format_eta(eta_sec)
-
-            if detector_v is not None and detector_t is not None:
-                is_v_steady, msg_v = detector_v.update(monitor_val_v)
-                is_t_steady, msg_t = detector_t.update(monitor_val_t)
-                
-                status_str = f"[V:{msg_v} T:{msg_t}]"
-                
-                if is_v_steady and is_t_steady and global_steady_time_p is None:
-                    global_steady_time_p = current_time_p
-                    logger.info(f"[SUCCESS] Flow AND Thermal steady state detected at t = {current_time_p:.3f} s!")
-                    logger.info(f"[INFO] Simulation will continue for another {steady_extra_p:.3f} s to record data.")
-            else:
-                status_str = "[MaxTime]"
 
             # ==========================================================
             # ★追加：カルマン渦検証用のポイントプローブ (時系列データの保存)
