@@ -1,0 +1,9 @@
+1.0E0     0.01E0     100.0E0
+30     32
+5000     1000
+6.0E0     1.0E0     1.0E0
+
+       READ(8,*) DENS,WALLV,RE
+       READ(8,*) M,N
+       READ(8,*) TEN,TIN
+       READ(8,*) LF0,TAU,C

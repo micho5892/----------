@@ -1,0 +1,14 @@
+12.0E0     0.128520E0
+0.85E0     0.0E0
+500     6     250
+150     30
+1.0E0     1.0E0
+1.002E0     2.0E0     1.0E0     0.9E0
+
+       READ(8,*) VEL,RE
+       READ(8,*) ROU0,DROU
+       READ(8,*) E0,DE
+       READ(8,*) M,N,M1
+       READ(8,*) TEN,TIN
+       READ(8,*) TAU,C
+       READ(8,*) XMS,GANMA,PR,XMYU

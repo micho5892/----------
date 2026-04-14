@@ -1,0 +1,126 @@
+フェーズ1（流体場の高精度化とSpurious flowの完全排除）の実装ですね。素晴らしい決断です。ここが安定すれば、熱伝達や流体・構造連成（FSI）の精度も飛躍的に向上します。
+既存のTaichiコードの美しさを保ちつつ、**「Eulerianな指標関数（$\phi$）」と「反復直接強制法（Iterative Forcing）」**を組み込むための具体的な改修手順を解説します。
+Step 1: context.py への指標関数 $\phi$ の追加
+すでに self.sdf が定義されていますので、その隣に固体割合を示す self.phi を追加します。
+
+Python
+
+
+# context.py の SimulationContext.__init__ 内
+
+        self.cell_id = ti.field(dtype=ti.i32)
+        self.sdf = ti.field(dtype=fp_dtype)
+        self.phi = ti.field(dtype=fp_dtype) # ★追加: 指標関数 (0.0:流体, 1.0:固体)
+        self.rho = ti.field(dtype=fp_dtype)
+
+# (中略) ... マクロ変数をまとめて配置する部分
+        grid.place(self.cell_id, self.sdf, self.phi, self.rho, self.temp, self.psi, self.S_g) # ★self.phiを配置
+
+
+Step 2: immersed_boundary.py で SDF と $\phi$ を計算する
+移動する物体（まずは円柱を想定）に合わせて、毎ステップ SDF（符号付き距離関数）と $\phi$ を更新するカーネルを追加します。
+
+Python
+
+
+# immersed_boundary.py の IBManager クラスに追加
+
+    @ti.kernel
+    def update_sdf_and_phi(self, ctx: ti.template(), radius_lbm: ti.f32):
+        """
+        円柱モデルを想定したSDFと指標関数φの更新。
+        ※複数物体や複雑形状の場合は、全マーカーからの最短距離を計算する実装に拡張します。
+        """
+        # 単一オブジェクト（円柱）の重心を取得
+        center = self.obj_center[0]
+        
+        # 拡散界面の厚み (1.5 ~ 2.0格子程度が最適)
+        epsilon = 1.5 
+
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            # Y方向貫通円柱なので、XとZの距離でSDFを計算
+            dx = float(i) - center[0]
+            dz = float(k) - center[2]
+            dist = ti.math.sqrt(dx**2 + dz**2)
+            
+            sdf_val = dist - radius_lbm
+            ctx.sdf[i, j, k] = sdf_val
+
+            # SDFから指標関数 φ を計算 (Smooth Heaviside関数)
+            # 内部(sdf < -epsilon)で1.0、外部(sdf > epsilon)で0.0
+            if sdf_val < -epsilon:
+                ctx.phi[i, j, k] = 1.0
+            elif sdf_val > epsilon:
+                ctx.phi[i, j, k] = 0.0
+            else:
+                ctx.phi[i, j, k] = 0.5 * (1.0 - ti.math.sin(ti.math.pi * sdf_val / (2.0 * epsilon)))
+
+
+Step 3: solver.py に体積ペナルティ法（VPM）を組み込む
+計算された $\phi$ を用いて、固体内部の流速を強制的に「剛体速度（今は静止なのでゼロ）」に上書きします。これにより内部のSpurious flowが完全に消滅します。
+
+Python
+
+
+# solver.py の update_macro 関数の最後に追加
+
+    @ti.kernel
+    def update_macro(self, ctx: ti.template()):
+        # ... (既存の rho, v, temp 更新処理) ...
+        
+        # ▼▼▼ 既存のループの「最後」に以下を追加 ▼▼▼
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            phi_val = ctx.phi[i, j, k]
+            if phi_val > 0.0:
+                # 剛体の速度 (今は固定円柱なのでゼロベクトル。移動させる場合は obj_vel を取得)
+                u_solid = ti.Vector([0.0, 0.0, 0.0])
+                
+                # 体積ペナルティ: 流体速度と剛体速度をφでブレンディング
+                ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
+
+
+Step 4: immersed_boundary.py を反復直接強制法へアップグレード
+現在の1パスの力計算をループ化し、壁面での滑りなし条件を厳密に満たします。
+
+Python
+
+
+# immersed_boundary.py の IBManager クラスに追加・修正
+
+    @ti.kernel
+    def apply_delta_force_to_velocity(self, ctx: ti.template()):
+        """反復計算中、仮の力を速度場に反映させるヘルパーカーネル"""
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            # LBMでは力 F による速度変化は F / (2 * rho) または F / rho (実装依存)
+            # ここではシンプルに F * dt (dt=1) を仮速度に加算して次の反復へ渡す
+            if ctx.is_fluid_table[ctx.cell_id[i, j, k]] == 1:
+                ctx.v[i, j, k] += ctx.F_int[i, j, k] / ctx.rho[i, j, k]
+
+    def step(self, ctx):
+        # 1. SDFとφの更新 (引数のradius_lbmは config から取得するか固定値でテスト)
+        # self.update_sdf_and_phi(ctx, radius_lbm=24.0)
+        
+        # 2. 毎ステップの力をゼロクリア
+        self.clear_forces_and_sources(ctx) 
+        
+        # 3. 反復直接強制法 (Iterative Direct Forcing)
+        num_iterations = 3
+        for it in range(num_iterations):
+            # マーカー上で速度を補間し、必要な力(差分)を計算
+            self.interp_velocity_and_calc_force(ctx)
+            # 力をEulerianグリッド(F_int)に展開・加算
+            self.spread_force(ctx)
+            
+            # 最後の反復以外は、展開した力で仮の速度場を更新し、次ループの補間精度を上げる
+            if it < num_iterations - 1:
+                self.apply_delta_force_to_velocity(ctx)
+                
+        # 4. オブジェクトの運動状態を更新
+        self.update_objects_and_markers()
+
+
+実装後の確認ポイント
+上記の改修を行うと、以下の現象が確認できるはずです。
+内部流速の消失: Paraview等の可視化で円柱内部（$\phi = 1.0$ の領域）の流速が完全にゼロになります。
+抗力（Cd）の安定: 境界での速度が厳密にゼロ（滑りなし）になるため、ibm_forces.csv に出力される抗力の値が、階段状（Staircase）モデルの時よりも滑らかで理論値に近づきます。
+まずは「固定された円柱」でテストを行っていただきたいのですが、config.py またはメインループから radius_lbm （円柱の半径）を update_sdf_and_phi に渡す仕組みの構築について、方針は固まっていますか？
