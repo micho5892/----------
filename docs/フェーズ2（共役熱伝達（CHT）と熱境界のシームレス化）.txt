@@ -121,3 +121,15 @@ Python
 期待される効果
 Staircase（階段状）ノイズの消失: 曲面壁から流体へ熱が伝わる際、境界格子がギザギザであっても、$\tau_g$ のスムージングにより温度等高線（コンター）が非常に美しい同心円（または曲面）を描くようになります。
 Nu数の精度向上: マーカー上の温度誤差が反復計算により実質的にゼロになるため、後から壁面近傍の温度勾配を取得する際、理論解に極めて近いNu数が得られるようになります。
+
+--- v2.7 実装メモ（仮設定値・仮処理） ---
+- 対象ブランチ実装: refactoredv2.7
+- 仮設定値:
+  - phase2_num_iterations = 3（温度反復の目安回数）
+  - phase2_heat_relax = 1.0（反復中の温度仮更新係数）
+  - phase2_enable_iterative_thermal = True（温度反復のON/OFF）
+- 仮処理:
+  - τg の界面連続化は線形補間（tau_g = tau_g_fluid*(1-phi) + tau_g_solid*phi）
+  - 温度ソース項は Guo型補正（(1 - 0.5*omega_g) * w * S_g）を適用
+  - 反復中の温度仮更新は temp += phase2_heat_relax * S_g / rho の簡易形
+  - 温度反復は obj_is_thermal == 1 のマーカーのみ対象

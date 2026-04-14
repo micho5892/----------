@@ -73,7 +73,11 @@ class LBMSimulator:
             # 1. 温度場 g の緩和と移流 (統合)
             # ==========================================================
             if self.is_fluid(ctx, cid):
-                tau_g = ctx.tau_g_table[cid]
+                # フェーズ2: φを使って界面の熱拡散率(=tau_g)を連続化
+                phi_val = ctx.phi[i, j, k]
+                tau_g_fluid = ctx.tau_g_table[FLUID_A]
+                tau_g_solid = ctx.tau_g_table[SOLID]
+                tau_g = tau_g_fluid * (1.0 - phi_val) + tau_g_solid * phi_val
                 omega_g = 1.0 / tau_g
                 v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
                 temp = ctx.temp[i, j, k]
@@ -82,7 +86,8 @@ class LBMSimulator:
                     geq = self.d3q19.get_geq(temp, v_g, d)
                     
                     # 計算した直後の値をローカル変数に持つ（g_postの代わり）
-                    g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + self.d3q19.w[d] * ctx.S_g[i, j, k]
+                    S_g_term = (1.0 - 0.5 * omega_g) * self.d3q19.w[d] * ctx.S_g[i, j, k]
+                    g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + S_g_term
                     
                     ip = i + self.d3q19.e[d][0]
                     jp = j + self.d3q19.e[d][1]

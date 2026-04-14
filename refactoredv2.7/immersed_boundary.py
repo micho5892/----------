@@ -71,7 +71,18 @@ def create_y_plate_markers(nz, wall_thickness_lbm, side, i_min, i_max_excl, ny):
 # --- IBM マネージャ ---
 @ti.data_oriented
 class IBManager:
-    def __init__(self, fp_dtype, objects_data, total_points, dA_lbm, phase1_epsilon_lbm=1.5, phase1_num_iterations=3):
+    def __init__(
+        self,
+        fp_dtype,
+        objects_data,
+        total_points,
+        dA_lbm,
+        phase1_epsilon_lbm=1.5,
+        phase1_num_iterations=3,
+        phase2_num_iterations=3,
+        phase2_heat_relax=1.0,
+        phase2_enable_iterative_thermal=True,
+    ):
         """
         objects_data: 辞書のリスト。各物体のメタデータを含む
         """
@@ -99,6 +110,9 @@ class IBManager:
         self.obj_hydro_force = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects)
         self.phase1_epsilon_lbm = float(phase1_epsilon_lbm)
         self.phase1_num_iterations = max(1, int(phase1_num_iterations))
+        self.phase2_num_iterations = max(1, int(phase2_num_iterations))
+        self.phase2_heat_relax = float(phase2_heat_relax)
+        self.phase2_enable_iterative_thermal = 1 if phase2_enable_iterative_thermal else 0
 
         #  温度場 (Thermal IBM) 用のフィールド
         self.marker_temp = ti.field(dtype=fp_dtype, shape=total_points)     # 各マーカーの目標温度
@@ -220,6 +234,36 @@ class IBManager:
                 self.marker_q[p] = 0.0
 
     @ti.kernel
+    def interp_temperature_and_calc_heat(self, ctx: ti.template(), clear_before_accumulate: ti.i32):
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            if self.obj_is_thermal[obj_id] != 0:
+                p_pos = self.pos[p]
+                t_interp = 0.0
+
+                base_i = int(ti.math.floor(p_pos[0]))
+                base_j = int(ti.math.floor(p_pos[1]))
+                base_k = int(ti.math.floor(p_pos[2]))
+
+                for i in range(base_i - 1, base_i + 3):
+                    for j in range(base_j - 1, base_j + 3):
+                        for k in range(base_k - 1, base_k + 3):
+                            if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
+                                dist_x = p_pos[0] - float(i)
+                                dist_y = p_pos[1] - float(j)
+                                dist_z = p_pos[2] - float(k)
+                                weight = self.peskin_delta(dist_x) * self.peskin_delta(dist_y) * self.peskin_delta(dist_z)
+                                t_interp += ctx.temp[i, j, k] * weight
+
+                q_delta = (self.marker_temp[p] - t_interp)
+                if clear_before_accumulate != 0:
+                    self.marker_q[p] = q_delta
+                else:
+                    self.marker_q[p] += q_delta
+            else:
+                self.marker_q[p] = 0.0
+
+    @ti.kernel
     def spread_force(self, ctx: ti.template()):
         for p in range(self.num_points):
             p_pos = self.pos[p]
@@ -331,14 +375,30 @@ class IBManager:
             if ctx.is_fluid_table[cid] == 1 and ctx.rho[i, j, k] > 1.0e-12:
                 ctx.v[i, j, k] += ctx.F_int[i, j, k] / ctx.rho[i, j, k]
 
+    @ti.kernel
+    def apply_delta_heat_to_temperature(self, ctx: ti.template(), heat_relax: ti.f32):
+        for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
+            cid = ctx.cell_id[i, j, k]
+            if ctx.is_fluid_table[cid] == 1 and ctx.rho[i, j, k] > 1.0e-12:
+                ctx.temp[i, j, k] += heat_relax * ctx.S_g[i, j, k] / ctx.rho[i, j, k]
+
     def step(self, ctx):
         self.update_sdf_and_phi(ctx)
         self.clear_forces_and_sources(ctx)
-        for it in range(self.phase1_num_iterations):
+        num_iterations = self.phase1_num_iterations
+        if self.phase2_enable_iterative_thermal != 0:
+            num_iterations = max(self.phase1_num_iterations, self.phase2_num_iterations)
+
+        for it in range(num_iterations):
             self.interp_velocity_and_calc_force(ctx)
+            if self.phase2_enable_iterative_thermal != 0:
+                clear_q = 1 if it == 0 else 0
+                self.interp_temperature_and_calc_heat(ctx, clear_q)
             self.spread_force(ctx)
-            if it < self.phase1_num_iterations - 1:
+            if it < num_iterations - 1:
                 self.apply_delta_force_to_velocity(ctx)
+                if self.phase2_enable_iterative_thermal != 0:
+                    self.apply_delta_heat_to_temperature(ctx, self.phase2_heat_relax)
         self.update_objects_and_markers()
         
     def get_hydro_forces(self):

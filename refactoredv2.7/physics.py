@@ -218,6 +218,9 @@ class ImmersedBoundaryModel(PhysicsModel):
             
         phase1_epsilon_lbm = ibm_cfg.get("phase1_epsilon_lbm", 1.5)
         phase1_num_iterations = ibm_cfg.get("phase1_num_iterations", 3)
+        phase2_num_iterations = ibm_cfg.get("phase2_num_iterations", 3)
+        phase2_heat_relax = ibm_cfg.get("phase2_heat_relax", 1.0)
+        phase2_enable_iterative_thermal = ibm_cfg.get("phase2_enable_iterative_thermal", True)
         self.ibm = IBManager(
             fp_dtype,
             parsed_objects,
@@ -225,6 +228,9 @@ class ImmersedBoundaryModel(PhysicsModel):
             self.dA_lbm,
             phase1_epsilon_lbm=phase1_epsilon_lbm,
             phase1_num_iterations=phase1_num_iterations,
+            phase2_num_iterations=phase2_num_iterations,
+            phase2_heat_relax=phase2_heat_relax,
+            phase2_enable_iterative_thermal=phase2_enable_iterative_thermal,
         )
         
         # --- 毎ステップの力を記録するCSVの準備 ---
