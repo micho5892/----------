@@ -97,9 +97,9 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         benchmark="thermal_cavity",
         out_dir=out_dir,
         fp_dtype="float32",
-        steady_detection=True,       
+        steady_detection=False,       
         steady_window_p=3.0,         
-        steady_tolerance=0.002,      
+        steady_tolerance=0.0000,      
         steady_extra_p=0.5,          
         
         nx=nx, ny=ny, nz=nz,
