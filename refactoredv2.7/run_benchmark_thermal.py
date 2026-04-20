@@ -14,21 +14,27 @@ DE_VAHL_DAVIS_DATA = {
     1e5: {"U_max": 34.73, "Z_Umax": 0.855, "W_max": 68.59, "X_Wmax": 0.066},
 }
 
-def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_domain, alpha_f, out_dir):
+# ▼ 引数に dx, dt を追加
+def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_domain, alpha_f, dx, dt, out_dir):
     data = np.load(npz_path)
     v_field = data['v']       # (nx, ny, nz, 3)
     temp_field = data['temp'] # (nx, ny, nz)
     
     y_mid = v_field.shape[1] // 2
     
-    # 中央断面のデータ抽出
-    u_2d = v_field[:, y_mid, :, 0] # X方向速度
-    w_2d = v_field[:, y_mid, :, 2] # Z方向速度
-    t_2d = temp_field[:, y_mid, :] # 温度
+    # 中央断面のデータ抽出 (LBM単位系)
+    u_2d = v_field[:, y_mid, :, 0] 
+    w_2d = v_field[:, y_mid, :, 2] 
+    t_2d = temp_field[:, y_mid, :] 
     
-    # 論文に合わせて無次元化 (U* = U * L / alpha)
-    u_norm = u_2d * L_domain / alpha_f
-    w_norm = w_2d * L_domain / alpha_f
+    # ▼ 追加: LBM格子速度から物理速度(m/s)への変換
+    phys_u_2d = u_2d * (dx / dt)
+    phys_w_2d = w_2d * (dx / dt)
+    
+    # ▼ 修正: 物理速度を使って論文の定義通りに無次元化 (U* = U_phys * L / alpha)
+    u_norm = phys_u_2d * L_domain / alpha_f
+    w_norm = phys_w_2d * L_domain / alpha_f
+    
     
     # 縦の中心線上 (X=0.5) の U速度プロファイル
     u_profile = u_norm[nx // 2, :]
@@ -108,7 +114,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         U_inlet_p=1.0, # ダミー(計算用)
         u_lbm=0.05,    # マッハ数エラーを避けるため低めに設定
         
-        max_time_p=40.0, 
+        max_time_p=20.0, 
         ramp_time_p=0.0,
         
         vis_interval=200, 

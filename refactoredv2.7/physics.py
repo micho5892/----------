@@ -101,7 +101,7 @@ class BoussinesqBuoyancy(PhysicsModel):
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
             if self.is_fluid(ctx, ctx.cell_id[i, j, k]):
                 temp_diff = ctx.temp[i, j, k] - self.T_ref
-                F = ctx.rho[i, j, k] * self.beta * temp_diff * self.g_vec
+                F = -ctx.rho[i, j, k] * self.beta * temp_diff * self.g_vec
                 ctx.F_int[i, j, k] += F
                 ctx.v[i, j, k] += F / (2.0 * ctx.rho[i, j, k])
 
