@@ -73,7 +73,7 @@ def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_domain, alpha
     plot_path = os.path.join(out_dir, f"Thermal_Cavity_Ra{int(target_Ra)}.png")
     plt.savefig(plot_path, dpi=300)
     print(f"\n[SUCCESS] Isotherm plot saved to: {plot_path}")
-    plt.show()
+    plt.show(block=False)
 
 
 def run_thermal_cavity_benchmark(target_Ra=1e5):
@@ -114,7 +114,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         U_inlet_p=1.0, # ダミー(計算用)
         u_lbm=0.05,    # マッハ数エラーを避けるため低めに設定
         
-        max_time_p=20.0, 
+        max_time_p=40.0, 
         ramp_time_p=0.0,
         
         vis_interval=200, 
@@ -141,12 +141,15 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         }
     )
 
-    npz_files =[f for f in os.listdir(out_dir) if f.endswith('_fields.npz')]
+    npz_files = [f for f in os.listdir(out_dir) if f.endswith('_fields.npz')]
     if not npz_files:
         return
-        
+
     npz_path = os.path.join(out_dir, npz_files[0])
-    analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_domain, alpha_f, out_dir)
+    dx = L_domain / nx
+    dt = dx * 0.05 / 1.0  # u_lbm=0.05, U_inlet_p=1.0 に対応
+
+    analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_domain, alpha_f, dx, dt, out_dir)
 
 if __name__ == "__main__":
     # まずは Ra = 10万 でテスト

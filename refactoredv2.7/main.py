@@ -323,15 +323,6 @@ def run_simulation(**kwargs):
 
         physics_manager.apply_all(ctx, current_time_p)
 
-        # 回転壁にも soft-start を掛けるため ramp_factor を渡す
-        sponge_amp = float(cfg.sponge_strength_amp(current_time_p))
-        sim.collide_and_stream(ctx, ramp_factor, sponge_amp)
-        
-        bc_manager.apply_all_before_macro(ctx, ramp_factor)
-        sim.update_macro(ctx)
-        bc_manager.apply_all_after_macro(ctx)
-        sim.move_particles(ctx, cfg.particles_inject_per_step)
-
         if step % cfg.vis_interval == 0:
             v_np = ctx.v.to_numpy()
             temp_np = ctx.temp.to_numpy()
@@ -454,6 +445,15 @@ def run_simulation(**kwargs):
         if vti_enabled and step % cfg.vti_export_interval == 0:
             vti_path = os.path.join(vti_dir, 'step_{:06d}.vti')
             export_step(ctx, step, vti_path, dx=cfg.dx)
+
+        # 回転壁にも soft-start を掛けるため ramp_factor を渡す
+        sponge_amp = float(cfg.sponge_strength_amp(current_time_p))
+        sim.collide_and_stream(ctx, ramp_factor, sponge_amp)
+
+        bc_manager.apply_all_before_macro(ctx, ramp_factor)
+        sim.update_macro(ctx)
+        bc_manager.apply_all_after_macro(ctx)
+        sim.move_particles(ctx, cfg.particles_inject_per_step)
 
         if global_steady_time_p is not None:
             if current_time_p - global_steady_time_p >= steady_extra_p:
