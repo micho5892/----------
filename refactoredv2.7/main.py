@@ -218,6 +218,7 @@ def run_simulation(**kwargs):
     if "max_time_p" not in kwargs:
         if "nx" in state and "nz" in state:
             max_time_p = state["nx"] * state["nz"] / state["alpha_f"] + max(ramp_time_p,  cfg.sponge_strength_decay_start_p + cfg.sponge_strength_decay_duration_p)
+            max_time_p += steady_extra_p
         else:
             max_time_p = 10.0
     else:
