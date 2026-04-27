@@ -782,8 +782,9 @@ class GeometryBuilder:
             sdf[i, j, k] = 100.0  # SDFの初期値（十分に遠い値）
             
             # Z方向の入口・出口の定義 (設定に合わせて Z=nz-1 を入口、Z=0 を出口とする)
+            # さらに x 方向の両側面(i=0, nx-1)も開放境界(OUTLET)として扱う。
             if k == nz - 1:
                 cell_id[i, j, k] = 20 # INLET
-            elif k == 0:
+            elif k == 0 or i == 0 or i == nx - 1:
                 cell_id[i, j, k] = 21 # OUTLET
 

@@ -49,6 +49,8 @@ def verify_parallel_plates(target_re=100.0):
         return
 
     state = result["state"]
+    nz=result["nx"] * 8 
+    max_time_p = nx * nz / result["alpha_f"]
     paths_out = {}
     nx = int(state["nx"])
     artifact_parent = os.path.join("results", "validation_poiseuille")
@@ -70,7 +72,7 @@ def verify_parallel_plates(target_re=100.0):
         Lx_p=state["L_domain"],
         U_inlet_p=state["U"],
         
-        max_time_p=20.0, 
+        max_time_p=max_time_p, 
         ramp_time_p=2.0,
         vis_interval=100, vti_export_interval=0,
 
@@ -122,7 +124,7 @@ def verify_karman_vortex(target_re=150.0):
             "u_lbm": 0.05,         # LBM速度
         },
         "ranges": {
-            "Re": {"min": 100, "max": 200},
+            # "Re": {"min": 100, "max": 200},
             "tau_f マージン": {"min": 0.02, "max": 2.0},
         },
         "targets": {
@@ -151,7 +153,7 @@ def verify_karman_vortex(target_re=150.0):
         state=state,
         
         artifact_parent=artifact_parent,
-        periodic_x=True,
+        periodic_x=False,
         periodic_y=True,
         periodic_z=False,
 

@@ -148,6 +148,7 @@ def compute_all_state_from_primary(primary):
     alpha_s_v = k_s_v / (rho_s_v * Cp_s_v)
     Re_v = U * L_ref_v / nu_v
     Pr_v = nu_v / alpha_f_v
+    Pe_v = Re_v * Pr_v
     C_r_v = (rho_s_v * Cp_s_v) / (rho_f_v * Cp_f_v)
     Re_Delta_v = U * dx_v / nu_v
     Pe_Delta_f_v = U * dx_v / alpha_f_v
@@ -178,6 +179,7 @@ def compute_all_state_from_primary(primary):
         "alpha_s": alpha_s_v,
         "Re": Re_v,
         "Pr": Pr_v,
+        "Pe": Pe_v,
         "C_r": C_r_v,
         "Re_Delta": Re_Delta_v,
         "Pe_Delta_f": Pe_Delta_f_v,
