@@ -4,14 +4,14 @@ import numpy as np
 import torch
 import taichi as ti
 
-# 既存のシミュレータのインポートを想定
-from config import SimConfig
-from context import SimulationContext
-from geometry import GeometryBuilder
-from solver import LBMSimulator
-from analytics import Analytics
-# 先ほど作成したモジュール
-from shape_modifier import ShapeModifier
+from .core_imports import (
+    Analytics,
+    GeometryBuilder,
+    LBMSimulator,
+    SimConfig,
+    SimulationContext,
+)
+from .shape_modifier import ShapeModifier
 
 class LBMHeatSinkEnv(gym.Env):
     """
