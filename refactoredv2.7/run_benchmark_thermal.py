@@ -263,6 +263,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         periodic_y=True,
         U_inlet_p=state["U"], 
         u_lbm=state["u_lbm"],    
+        output_format="mp4",
         
         max_time_p=max_time_p, 
         ramp_time_p=0.0,

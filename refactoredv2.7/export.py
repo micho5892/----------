@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from context import SOLID, SOLID_HEAT_SOURCE
 from lbm_logger import get_logger
 import io
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 log = get_logger(__name__)
 
@@ -38,6 +39,14 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     fig.patch.set_facecolor('white')
     
+    def add_fixed_colorbar(im, ax, fmt=None):
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+        if fmt:
+            fig.colorbar(im, cax=cax, format=fmt)
+        else:
+            fig.colorbar(im, cax=cax)
+
     # ==========================================
     # 1. 左上: Front (XZ断面) - 温度場
     # ==========================================
@@ -48,6 +57,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax1.set_xlabel("X")
     ax1.set_ylabel("Z")
     fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im1, ax1)
 
     # ==========================================
     # 2. 左下: Front (XZ断面) - 速度場 ＋ 流線 (Streamline)
@@ -58,7 +68,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax2.set_xlabel("X")
     ax2.set_ylabel("Z")
     fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-    
+    add_fixed_colorbar(im2, ax2)
     # 流線の描画
     u_2d = v_np[:, y_mid, :, 0].T
     w_2d = v_np[:, y_mid, :, 2].T
@@ -78,6 +88,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax3.set_xlabel("X")
     ax3.set_ylabel("Y")
     fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im3, ax3)
 
     # ==========================================
     # 4. 右下: Side (YZ断面) - 温度場
@@ -88,10 +99,11 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax4.set_xlabel("Y")
     ax4.set_ylabel("Z")
     fig.colorbar(im4, ax=ax4, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im4, ax4)
 
     # 全体のタイトルに時間を表示
     fig.suptitle(f"Time: {current_time_p:.3f} s  |  Step: {step}", fontsize=16, fontweight='bold')
-    plt.tight_layout()
+    plt.subplots_adjust(left=0.05, right=0.92, top=0.90, bottom=0.05, wspace=0.3, hspace=0.3)
 
     # --- Figure を RGB NumPy 配列に変換 ---
     buf = io.BytesIO()
