@@ -97,8 +97,9 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     buf = io.BytesIO()
     plt.savefig(buf, format='raw', dpi=100)
     buf.seek(0)
-    img_arr = np.reshape(np.frombuffer(buf.getvalue(), dtype=np.uint8),
-                         newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
+    img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8).reshape(
+        int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1
+    )
     
     # RGBAのA(アルファ値)を落としてRGBにする
     canvas = img_arr[:, :, :3]
