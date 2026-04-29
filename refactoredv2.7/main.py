@@ -438,7 +438,7 @@ def run_simulation(**kwargs):
 
             logger.info(f"Step {step:6d} | t: {current_time_p:.3f}s / {target_time_p:.3f}s | ETA: {eta_str} | {status_str} {monitor_name}")
 
-            canvas = build_vis_frame(ctx, cfg)
+            canvas = build_vis_frame(ctx, cfg, current_time_p=current_time_p, step=step)
             frames.append(canvas)
 
 
