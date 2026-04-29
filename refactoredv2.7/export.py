@@ -1,26 +1,25 @@
 # ==========================================================
 # export.py — 可視化フレーム構築・GIF出力（Matplotlib リッチ版）
 # ==========================================================
-import numpy as np
+import io
+import queue
+import threading
+
 import imageio.v2 as imageio
 import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 from context import SOLID, SOLID_HEAT_SOURCE
 from lbm_logger import get_logger
-import io
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 log = get_logger(__name__)
 
-def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
-    """Matplotlib を用いてリッチな可視化フレーム（RGB配列）を生成する"""
-    
-    # NumPy配列へ変換
-    temp_np = ctx.temp.to_numpy()
-    v_np = ctx.v.to_numpy()
+
+def build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, cfg, current_time_p=0.0, step=0):
+    """NumPy配列からリッチ可視化フレーム（RGB配列）を生成する。"""
     speed_np = np.linalg.norm(v_np, axis=-1)
-    
-    cell_id_np = ctx.cell_id.to_numpy()
-    
+
     # 固体セルをマスク（NaNにすることで、Matplotlibが自動で透明・背景色にしてくれる）
     mask_np = (cell_id_np == SOLID) | (cell_id_np == SOLID_HEAT_SOURCE)
     temp_plot = np.where(mask_np, np.nan, temp_np)
@@ -56,7 +55,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax1.set_title("Temperature (Front: XZ-plane)")
     ax1.set_xlabel("X")
     ax1.set_ylabel("Z")
-    fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+    # fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
     add_fixed_colorbar(im1, ax1)
 
     # ==========================================
@@ -67,8 +66,8 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax2.set_title("Velocity & Streamlines (Front: XZ-plane)")
     ax2.set_xlabel("X")
     ax2.set_ylabel("Z")
-    fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
-    add_fixed_colorbar(im2, ax2)
+    # fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im2, ax2, fmt="%.5f")
     # 流線の描画
     u_2d = v_np[:, y_mid, :, 0].T
     w_2d = v_np[:, y_mid, :, 2].T
@@ -88,7 +87,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax3.set_xlabel("X")
     ax3.set_ylabel("Y")
     fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
-    add_fixed_colorbar(im3, ax3)
+    # add_fixed_colorbar(im3, ax3)
 
     # ==========================================
     # 4. 右下: Side (YZ断面) - 温度場
@@ -99,7 +98,7 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     ax4.set_xlabel("Y")
     ax4.set_ylabel("Z")
     fig.colorbar(im4, ax=ax4, fraction=0.046, pad=0.04)
-    add_fixed_colorbar(im4, ax4)
+    # add_fixed_colorbar(im4, ax4)
 
     # 全体のタイトルに時間を表示
     fig.suptitle(f"Time: {current_time_p:.3f} s  |  Step: {step}", fontsize=16, fontweight='bold')
@@ -119,18 +118,32 @@ def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
     plt.close(fig)
     return canvas
 
+
+def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
+    """互換ラッパー: コンテキストから可視化フレームを生成する。"""
+    temp_np = ctx.temp.to_numpy()
+    v_np = ctx.v.to_numpy()
+    cell_id_np = ctx.cell_id.to_numpy()
+    return build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, cfg, current_time_p, step)
+
+
+def _open_animation_writer(filename, fps):
+    if str(filename).lower().endswith(".mp4"):
+        return imageio.get_writer(
+            filename,
+            fps=fps,
+            codec="libx264",
+            quality=8,
+            macro_block_size=1,
+        )
+    return imageio.get_writer(filename, fps=fps)
+
 def export_gif_frames(frames, filename, fps=12):
     imageio.mimsave(filename, frames, fps=fps)
     log.info("GIF saved: %s", filename)
 
 def export_mp4_frames(frames, filename, fps=30):
-    with imageio.get_writer(
-        filename,
-        fps=fps,
-        codec="libx264",
-        quality=8,
-        macro_block_size=1,
-    ) as writer:
+    with _open_animation_writer(filename, fps=max(1, int(fps))) as writer:
         for frame in frames:
             writer.append_data(frame)
     log.info("MP4 saved: %s", filename)
@@ -141,3 +154,82 @@ def export_animation_frames(frames, filename, fps=12):
         export_mp4_frames(frames, filename, fps=max(1, int(fps)))
     else:
         export_gif_frames(frames, filename, fps=max(1, int(fps)))
+
+
+class AsyncAnimationPipeline:
+    """
+    可視化フレーム生成 + エンコードをバックグラウンドで処理する。
+    キュー満杯時は drop_policy に従って計算スレッドをブロックしない。
+    """
+    def __init__(self, cfg, filename, fps=12, max_queue=8, drop_policy="drop_oldest"):
+        self.cfg = cfg
+        self.filename = filename
+        self.fps = max(1, int(fps))
+        self.max_queue = max(1, int(max_queue))
+        self.drop_policy = str(drop_policy).lower()
+        if self.drop_policy not in ("drop_oldest", "drop_newest"):
+            self.drop_policy = "drop_oldest"
+        self._q = queue.Queue(maxsize=self.max_queue)
+        self._stop_token = object()
+        self._writer = None
+        self._thread = None
+        self._started = False
+        self.submitted = 0
+        self.written = 0
+        self.dropped = 0
+
+    def start(self):
+        if self._started:
+            return
+        self._writer = _open_animation_writer(self.filename, self.fps)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        self._started = True
+
+    def _run(self):
+        while True:
+            item = self._q.get()
+            if item is self._stop_token:
+                self._q.task_done()
+                break
+            temp_np, v_np, cell_id_np, current_time_p, step = item
+            frame = build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, self.cfg, current_time_p, step)
+            self._writer.append_data(frame)
+            self.written += 1
+            self._q.task_done()
+
+    def submit_snapshot(self, temp_np, v_np, cell_id_np, current_time_p, step):
+        if not self._started:
+            self.start()
+        self.submitted += 1
+        item = (temp_np, v_np, cell_id_np, float(current_time_p), int(step))
+        if not self._q.full():
+            self._q.put_nowait(item)
+            return True
+        if self.drop_policy == "drop_oldest":
+            try:
+                self._q.get_nowait()
+                self._q.task_done()
+                self.dropped += 1
+            except queue.Empty:
+                pass
+            self._q.put_nowait(item)
+            return True
+        self.dropped += 1
+        return False
+
+    def close(self):
+        if not self._started:
+            return
+        self._q.put(self._stop_token)
+        self._thread.join()
+        self._writer.close()
+
+    def stats(self):
+        return {
+            "submitted": self.submitted,
+            "written": self.written,
+            "dropped": self.dropped,
+            "drop_policy": self.drop_policy,
+            "max_queue": self.max_queue,
+        }

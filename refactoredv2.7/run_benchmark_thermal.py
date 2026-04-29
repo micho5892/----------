@@ -264,8 +264,10 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         U_inlet_p=state["U"], 
         u_lbm=state["u_lbm"],    
         output_format="mp4",
+        visualization_mode="offline",
         
-        max_time_p=max_time_p, 
+        # max_time_p=max_time_p, 
+        max_time_p=3, 
         ramp_time_p=0.0,
         
         vis_interval=200, 

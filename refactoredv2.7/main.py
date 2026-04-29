@@ -138,7 +138,11 @@ def run_simulation(**kwargs):
     from geometry import GeometryBuilder
     from boundary import BoundaryManager
     from solver import LBMSimulator
-    from export import build_vis_frame, export_animation_frames
+    from export import (
+        build_vis_frame,
+        export_animation_frames,
+        AsyncAnimationPipeline,
+    )
     from analytics import Analytics
     from physics import PhysicsManager
     from data_exporter import DataExporter
@@ -173,6 +177,11 @@ def run_simulation(**kwargs):
     steady_tolerance = kwargs.pop("steady_tolerance", 0.001) 
     steady_extra_p = kwargs.pop("steady_extra_p", 2.0)      
     max_time_p = kwargs.pop("max_time_p", 10.0) 
+    visualization_mode = str(kwargs.pop("visualization_mode", "realtime")).lower().strip()
+    if visualization_mode not in ("realtime", "offline", "none"):
+        visualization_mode = "realtime"
+    visualization_queue_size = int(kwargs.pop("visualization_queue_size", 8))
+    visualization_drop_policy = str(kwargs.pop("visualization_drop_policy", "drop_oldest")).lower().strip()
 
     # 出力先: artifact_parent を指定すると「その直下に 1 実行ごとのサブフォルダ」を作成する。
     # 未指定かつ out_dir も無いときの既定の親は results（従来と同様に results/<benchmark>_<timestamp>/）。
@@ -302,6 +311,30 @@ def run_simulation(**kwargs):
     global_steady_time_p = None
 
     frames =[]
+    fps = int(1 / (cfg.vis_interval * cfg.dt))
+    vis_snapshots_dir = os.path.join(out_dir, "vis_snapshots")
+    async_vis = None
+    cell_id_np_cache = None
+    if visualization_mode in ("realtime", "offline"):
+        cell_id_np_cache = ctx.cell_id.to_numpy()
+    if visualization_mode == "realtime":
+        async_vis = AsyncAnimationPipeline(
+            cfg=cfg,
+            filename=cfg.filename,
+            fps=fps,
+            max_queue=visualization_queue_size,
+            drop_policy=visualization_drop_policy,
+        )
+        logger.info(
+            "Visualization mode: realtime (async queue=%d, drop_policy=%s)",
+            visualization_queue_size,
+            visualization_drop_policy,
+        )
+    elif visualization_mode == "offline":
+        os.makedirs(vis_snapshots_dir, exist_ok=True)
+        logger.info("Visualization mode: offline (save snapshots only)")
+    else:
+        logger.info("Visualization mode: none (skip animation generation)")
     logger.info(f"--- Starting Benchmark: {benchmark.upper()} ---")
     logger.info(f"State: {pformat(state)}")
     logger.info(f"Grid: {cfg.nx}x{cfg.ny}x{cfg.nz} | Max Time: {max_time_p:.2f} s | dt: {cfg.dt:.6e} s")
@@ -438,8 +471,25 @@ def run_simulation(**kwargs):
 
             logger.info(f"Step {step:6d} | t: {current_time_p:.3f}s / {target_time_p:.3f}s | ETA: {eta_str} | {status_str} {monitor_name}")
 
-            canvas = build_vis_frame(ctx, cfg, current_time_p, step)
-            frames.append(canvas)
+            if visualization_mode == "realtime":
+                accepted = async_vis.submit_snapshot(
+                    temp_np=temp_np,
+                    v_np=v_np,
+                    cell_id_np=cell_id_np_cache,
+                    current_time_p=current_time_p,
+                    step=step,
+                )
+                if not accepted:
+                    logger.debug("Visualization queue full: frame skipped at step=%d", step)
+            elif visualization_mode == "offline":
+                snap_path = os.path.join(vis_snapshots_dir, f"step_{step:06d}.npz")
+                np.savez_compressed(
+                    snap_path,
+                    temp=temp_np,
+                    v=v_np,
+                    time_p=np.float64(current_time_p),
+                    step=np.int64(step),
+                )
 
 
         if exporter is not None:
@@ -504,8 +554,31 @@ def run_simulation(**kwargs):
     if export_step is not None:
         logger.info(f" -> Final VTI saved to: {final_vti_path}")
 
-    export_animation_frames(frames, cfg.filename, fps=int(1/(cfg.vis_interval*cfg.dt)))
-    logger.info(f"Finished Benchmark: {benchmark}. Saved as {cfg.filename}")
+    if visualization_mode == "realtime":
+        async_vis.close()
+        logger.info("Async visualization stats: %s", async_vis.stats())
+        logger.info(f"Finished Benchmark: {benchmark}. Saved as {cfg.filename}")
+    elif visualization_mode == "offline":
+        cell_id_path = os.path.join(vis_snapshots_dir, "cell_id.npy")
+        np.save(cell_id_path, cell_id_np_cache)
+        vis_meta = {
+            "filename": cfg.filename,
+            "fps": fps,
+            "benchmark": benchmark,
+            "nx": cfg.nx,
+            "ny": cfg.ny,
+            "nz": cfg.nz,
+        }
+        vis_meta_path = os.path.join(vis_snapshots_dir, "render_meta.json")
+        with open(vis_meta_path, "w", encoding="utf-8") as f:
+            json.dump(vis_meta, f, indent=2)
+        logger.info("Offline snapshots saved: %s", vis_snapshots_dir)
+        logger.info(
+            "Render later with: conda run -n lbm-sim python refactoredv2.7/render_animation_offline.py --snapshot-dir \"%s\"",
+            vis_snapshots_dir,
+        )
+    else:
+        logger.info(f"Finished Benchmark: {benchmark}. Animation export skipped by mode=none")
 
     # 出力ディレクトリ全体を zip 圧縮
     try:
@@ -523,6 +596,9 @@ def run_simulation(**kwargs):
             paths_out["gif_path"] = cfg.filename
         if str(cfg.filename).lower().endswith(".mp4"):
             paths_out["mp4_path"] = cfg.filename
+        paths_out["visualization_mode"] = visualization_mode
+        if visualization_mode == "offline":
+            paths_out["vis_snapshots_dir"] = vis_snapshots_dir
         paths_out["npz_path"] = npz_path
         paths_out["meta_path"] = meta_path
         paths_out["run_subdir"] = run_subdir
