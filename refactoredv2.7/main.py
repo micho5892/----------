@@ -138,7 +138,7 @@ def run_simulation(**kwargs):
     from geometry import GeometryBuilder
     from boundary import BoundaryManager
     from solver import LBMSimulator
-    from export import build_vis_frame, export_gif_frames
+    from export import build_vis_frame, export_animation_frames
     from analytics import Analytics
     from physics import PhysicsManager
     from data_exporter import DataExporter
@@ -204,9 +204,13 @@ def run_simulation(**kwargs):
         vti_dir = os.path.join(out_dir, "vti")
     os.makedirs(vti_dir, exist_ok=True)
     
-    # ファイルのパス設定
-    gif_path = kwargs.get("filename", os.path.join(out_dir, f"{benchmark}_{timestamp}.gif"))
-    kwargs["filename"] = gif_path
+    # ファイルのパス設定（output_format があれば既定拡張子に反映）
+    output_format = str(kwargs.pop("output_format", "gif")).lower().strip()
+    if output_format not in ("gif", "mp4"):
+        output_format = "gif"
+    anim_ext = ".mp4" if output_format == "mp4" else ".gif"
+    animation_path = kwargs.get("filename", os.path.join(out_dir, f"{benchmark}_{timestamp}{anim_ext}"))
+    kwargs["filename"] = animation_path
     log_path = os.path.join(out_dir, f"{benchmark}_{timestamp}.log")
     
     # ロガー（lbm_logger: 実行フォルダの .log とコンソールへ）
@@ -500,7 +504,7 @@ def run_simulation(**kwargs):
     if export_step is not None:
         logger.info(f" -> Final VTI saved to: {final_vti_path}")
 
-    export_gif_frames(frames, cfg.filename, fps=int(1/(cfg.vis_interval*cfg.dt)))
+    export_animation_frames(frames, cfg.filename, fps=int(1/(cfg.vis_interval*cfg.dt)))
     logger.info(f"Finished Benchmark: {benchmark}. Saved as {cfg.filename}")
 
     # 出力ディレクトリ全体を zip 圧縮
@@ -514,7 +518,11 @@ def run_simulation(**kwargs):
     if isinstance(paths_out, dict):
         paths_out["out_dir"] = out_dir
         paths_out["vti_dir"] = vti_dir
-        paths_out["gif_path"] = cfg.filename
+        paths_out["animation_path"] = cfg.filename
+        if str(cfg.filename).lower().endswith(".gif"):
+            paths_out["gif_path"] = cfg.filename
+        if str(cfg.filename).lower().endswith(".mp4"):
+            paths_out["mp4_path"] = cfg.filename
         paths_out["npz_path"] = npz_path
         paths_out["meta_path"] = meta_path
         paths_out["run_subdir"] = run_subdir

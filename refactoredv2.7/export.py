@@ -68,3 +68,27 @@ def export_gif_frames(frames, filename, fps=12):
     """フレーム列をGIFファイルに保存する。"""
     imageio.mimsave(filename, frames, fps=fps)
     log.info("GIF saved: %s", filename)
+
+
+def export_mp4_frames(frames, filename, fps=30):
+    """フレーム列をMP4ファイルに保存する。"""
+    # 一般的なプレイヤー互換を優先し、H.264 で書き出す。
+    with imageio.get_writer(
+        filename,
+        fps=fps,
+        codec="libx264",
+        quality=8,
+        macro_block_size=1,
+    ) as writer:
+        for frame in frames:
+            writer.append_data(frame)
+    log.info("MP4 saved: %s", filename)
+
+
+def export_animation_frames(frames, filename, fps=12):
+    """拡張子に応じて GIF / MP4 の保存を切り替える。"""
+    lower_name = str(filename).lower()
+    if lower_name.endswith(".mp4"):
+        export_mp4_frames(frames, filename, fps=max(1, int(fps)))
+    else:
+        export_gif_frames(frames, filename, fps=max(1, int(fps)))
