@@ -167,9 +167,9 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
     print(f" 差温キャビティ内の自然対流 (Ra={target_Ra:.1e}) の精度検証")
     print("="*60)
     
-    nx = 128
+    nx = nz = 128 * 4
     ny = 4
-    nz = 128
+    # nz = 128
     L_domain = 0.1
     dx = L_domain / nx
     

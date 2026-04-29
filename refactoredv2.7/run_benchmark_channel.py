@@ -325,6 +325,7 @@ def run_channel_benchmark(artifact_parent=None):
         
         max_time_p=240.0,  
         ramp_time_p=1.0,  # 衝撃波を防ぐためソフトスタート
+        visualization_mode="offline",
         
         vis_interval=100, 
         vti_export_interval=0, particles_inject_per_step=0,
@@ -419,6 +420,7 @@ def run_channel_benchmark_lbm(artifact_parent=None):
 
         max_time_p=240.0,
         ramp_time_p=1.0,
+        visualization_mode="offline",
 
         vis_interval=100,
         vti_export_interval=0,

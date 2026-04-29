@@ -74,6 +74,7 @@ def verify_parallel_plates(target_re=100.0):
         
         max_time_p=max_time_p, 
         ramp_time_p=2.0,
+        visualization_mode="offline",
         vis_interval=100, vti_export_interval=0,
 
         sponge_thickness=40.0,
@@ -163,6 +164,7 @@ def verify_karman_vortex(target_re=150.0):
         
         max_time_p=20.0,              # カルマン渦が成長するまでの時間
         ramp_time_p=2.0,              # 衝撃波を防ぐソフトスタート
+        visualization_mode="offline",
         vis_interval=100, 
         vti_export_interval=0, 
         particles_inject_per_step=200, # 渦を可視化するためのパーティクル
