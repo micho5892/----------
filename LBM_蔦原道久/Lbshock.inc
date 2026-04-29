@@ -1,0 +1,21 @@
+       COMMON /VAR1/ F0(0:8000,0:10),F11(0:8000,0:10,4)
+     &              ,F12(0:8000,0:10,4),F13(0:8000,0:10,4)
+     &              ,F21(0:8000,0:10,4),F22(0:8000,0:10,4)
+       COMMON /VAR2/ DM11(0:8000,0:10,4)
+     &              ,DM12(0:8000,0:10,4),DM13(0:8000,0:10,4)
+     &              ,DM21(0:8000,0:10,4),DM22(0:8000,0:10,4)
+       COMMON /CON1/ ROU0,DROU,VEL,E0,DE,RE
+       COMMON /CON2/ M,N,M1
+       COMMON /CON3/ TEN,TIN,TAU,II
+       COMMON /CON4/ PI,C,FAI
+       COMMON /CON5/ VNEQ,DFAI
+       COMMON /CON6/ U1,ROU1,T1,P1,S1,U2,ROU2,T2,P2,S2
+     &              ,XMS,XMYU,GANMA,PR
+C
+       REAL F0,F11,F12,F13,F21,F22
+     &     ,ROU0,DROU,VEL,E0,DE,RE,TAU,PI,C,FAI,ROU,UO,VO,ALLE,E
+     &     ,CF1(2,0:3),CF2(2,0:3),CF(2,0:3)
+     &     ,FE(2,3,4),DM(2,3,4),FE0,DM0,AVU(0:12000)
+       INTEGER TEN,TIN
+       CHARACTER NAME*20
+       PI=ATAN(1.0E0)*4.0E0

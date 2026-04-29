@@ -1,0 +1,13 @@
+90          104
+30          60
+2.0e0       6.0e0          1.0e0         1.2250e0
+50000       1000           0.55e0
+1.0e0       0.50e-4        1.0E5
+C
+         READ(8,*) M, N
+         READ(8,*) M1,M2
+         READ(8,*) D,b,c,Ru0
+         READ(8,*) TT,TI,Tk
+         READ(8,*) qr,qb,Gr
+c
+c

@@ -206,6 +206,7 @@ def run_ibm_cylinder_benchmark(target_re=100.0):
             # カルマン渦の周期を数回とれる程度の十分な時間
             max_time_p=300.0, 
             ramp_time_p=2,
+            visualization_mode="offline",
             
             vis_interval=100, 
             vti_export_interval=0, particles_inject_per_step=0,

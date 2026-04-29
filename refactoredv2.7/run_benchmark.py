@@ -155,6 +155,7 @@ def run_cavity_benchmark(target_re=100.0):
         
         max_time_p=30.0,  # タイムアウト時間
         ramp_time_p=0.0,  # キャビティはフタを急発進させるのでソフトスタートなし
+        visualization_mode="offline",
         
         vis_interval=200, 
         vti_export_interval=0, particles_inject_per_step=0,

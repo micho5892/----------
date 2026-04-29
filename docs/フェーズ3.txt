@@ -1,0 +1,204 @@
+いよいよLBMシミュレーションの集大成である「フェーズ3（高精度なNu数算出とFSI：流体構造連成）」ですね。ここを乗り越えれば、熱・流体・構造が完全に相互作用する非常に高度な独自の物理シミュレータが完成します。
+階段状の境界によるノイズを回避し、さらに物体が流体力と外部力（重力など）を受けて自由に動く仕組みを実装するための具体的なコード改修手順を解説します。
+Step 1: マーカーへの「法線ベクトル」と「慣性モーメント」の追加
+正確な温度勾配の計算と回転運動のために、各マーカーが向いている「法線ベクトル（Normal Vector）」と、物体の「慣性モーメント（Moment of Inertia）」を定義する必要があります。
+対象ファイル: immersed_boundary.py
+
+Python
+
+
+# IBManager クラスの __init__ にフィールドを追加
+
+        # --- フェーズ3追加分 ---
+        self.marker_normal = ti.Vector.field(3, dtype=fp_dtype, shape=total_points) # 法線ベクトル
+        
+        # 回転ダイナミクス用
+        self.obj_inertia = ti.field(dtype=fp_dtype, shape=self.num_objects) # 慣性モーメント
+        self.obj_torque = ti.Vector.field(3, dtype=fp_dtype, shape=self.num_objects) # 流体トルク
+
+
+形状生成関数（例: create_cylinder_markers）も改修し、座標と一緒に法線ベクトル（中心から外側へ向かう単位ベクトル）も返すようにし、それを _init_data で self.marker_normal に転送する処理を追加してください。
+Step 2: 局所Nu数算出のための「プローブ法」の実装
+マーカー上の温度は強制的に壁面温度に設定されるため、そこで勾配を計算するとIBMのスムージング（$\phi$やSDF）の影響で誤差が出ます。マーカーから法線方向へ $1.5 \sim 2.0$ 格子分だけ離れた「完全な流体領域」にプローブを飛ばして温度を補間取得します。
+対象ファイル: analytics.py （または immersed_boundary.py）
+
+Python
+
+
+    @ti.kernel
+    def compute_ibm_local_nu(self, ctx: ti.template(), ibm: ti.template()) -> ti.f32:
+        """プローブ法による高精度なNu数計算"""
+        probe_dist = 1.5  # 壁から1.5格子分だけ法線方向に離れる
+        sum_q = 0.0
+        area = 0.0
+
+        for p in range(ibm.num_points):
+            obj_id = ibm.marker_obj_id[p]
+            if ibm.obj_is_thermal[obj_id] != 0:
+                pos = ibm.pos[p]
+                normal = ibm.marker_normal[p]
+                
+                # プローブ点の座標
+                probe_pos = pos + normal * probe_dist
+                
+                # プローブ点での流体温度を補間 (周囲の格子点から取得)
+                t_probe = 0.0
+                base_i = int(ti.math.floor(probe_pos[0]))
+                base_j = int(ti.math.floor(probe_pos[1]))
+                base_k = int(ti.math.floor(probe_pos[2]))
+                
+                for i in range(base_i - 1, base_i + 3):
+                    for j in range(base_j - 1, base_j + 3):
+                        for k in range(base_k - 1, base_k + 3):
+                            if 0 <= i < ctx.nx and 0 <= j < ctx.ny and 0 <= k < ctx.nz:
+                                dx = probe_pos[0] - float(i)
+                                dy = probe_pos[1] - float(j)
+                                dz = probe_pos[2] - float(k)
+                                # peskin_deltaはibmの関数を呼び出すか、同等の補間を使用
+                                weight = ibm.peskin_delta(dx) * ibm.peskin_delta(dy) * ibm.peskin_delta(dz)
+                                t_probe += ctx.temp[i, j, k] * weight
+                
+                # 壁面温度勾配の計算 (一次差分)
+                # T_wall = ibm.marker_temp[p]
+                grad_T = (t_probe - ibm.marker_temp[p]) / probe_dist
+                
+                # 熱伝導率kを掛けて熱流束へ
+                # ※ k_fluid は対象流体の熱伝導率
+                q_local = -ctx.k_table[FLUID_A] * grad_T 
+                sum_q += q_local
+                area += 1.0
+
+        q_avg = sum_q / area if area > 0 else 0.0
+        # ※この後、q_avg と T_bulk から Nu数を算出する (既存のロジックを流用)
+        return q_avg
+
+
+Step 3: FSIのための流体力・トルクの集計
+マーカー上で計算された「流体を止めるための力」の反作用が、物体にかかる流体力とトルクになります。
+対象ファイル: immersed_boundary.py
+
+Python
+
+
+# IBManager クラスの update_objects_and_markers 内
+
+        # 1. 各物体が受ける流体力とトルクの集計
+        for obj_id in range(self.num_objects):
+            self.obj_hydro_force[obj_id] = ti.Vector([0.0, 0.0, 0.0])
+            self.obj_torque[obj_id] = ti.Vector([0.0, 0.0, 0.0])
+            
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            
+            # 流体がマーカーに及ぼす力 (マイナス符号に注意)
+            f_fluid = -self.force[p] * self.dA
+            self.obj_hydro_force[obj_id] += f_fluid
+            
+            # 重心からの相対位置ベクトル
+            r = self.pos[p] - self.obj_center[obj_id]
+            
+            # トルクの計算 (r × F)
+            tau_x = r[1] * f_fluid[2] - r[2] * f_fluid[1]
+            tau_y = r[2] * f_fluid[0] - r[0] * f_fluid[2]
+            tau_z = r[0] * f_fluid[1] - r[1] * f_fluid[0]
+            self.obj_torque[obj_id] += ti.Vector([tau_x, tau_y, tau_z])
+
+
+Step 4: ニュートン・オイラー方程式による剛体運動の更新
+集計した流体力に外部力を加え、物体の並進・回転速度を更新し、マーカーを移動させます。
+対象ファイル: immersed_boundary.py
+
+Python
+
+
+# IBManager クラスの update_objects_and_markers 内の続き
+
+        # 2. 自由運動(Free)オブジェクトのニュートン・オイラー方程式
+        for obj_id in range(self.num_objects):
+            if self.obj_type[obj_id] == 1: # free
+                
+                # --- 外部力のフック (例: 重力や浮力) ---
+                # LBM単位系に変換済みの重力加速度ベクトルを掛ける
+                ext_force = ti.Vector([0.0, 0.0, -9.8e-4]) * self.obj_mass[obj_id] 
+                total_force = self.obj_hydro_force[obj_id] + ext_force
+                
+                # 並進運動の更新 (v = v + a*dt)
+                self.obj_vel[obj_id] += total_force / self.obj_mass[obj_id]
+                self.obj_center[obj_id] += self.obj_vel[obj_id]
+                
+                # 回転運動の更新 (omega = omega + (tau/I)*dt)
+                # ※球や円柱を想定し、慣性テンソルではなくスカラーの I で簡略化
+                self.obj_omega[obj_id] += self.obj_torque[obj_id] / self.obj_inertia[obj_id]
+
+        # 3. 各マーカーの座標と速度の更新
+        for p in range(self.num_points):
+            obj_id = self.marker_obj_id[p]
+            o_type = self.obj_type[obj_id]
+            
+            if o_type == 1 or o_type == 2: # free または rotating
+                # オブジェクトの現在の状態を取得
+                v_c = self.obj_vel[obj_id]
+                omega = self.obj_omega[obj_id]
+                center = self.obj_center[obj_id]
+                
+                # 前ステップの中心から現在の重心への変位分、マーカーを並進
+                # (※厳密には位置と回転のクォータニオン管理がベストですが、LBMでは微小変位の累積で表現可能です)
+                r = self.pos[p] - center 
+                
+                # 回転によるマーカーの速度 (v = omega × r)
+                v_rot = ti.Vector([
+                    omega[1]*r[2] - omega[2]*r[1],
+                    omega[2]*r[0] - omega[0]*r[2],
+                    omega[0]*r[1] - omega[1]*r[0]
+                ])
+                
+                # マーカーの最終的な速度と位置の更新
+                self.vel[p] = v_c + v_rot
+                self.pos[p] += self.vel[p] 
+                
+                # 法線ベクトルの回転更新 (omega × normal)
+                n = self.marker_normal[p]
+                dn = ti.Vector([
+                    omega[1]*n[2] - omega[2]*n[1],
+                    omega[2]*n[0] - omega[0]*n[2],
+                    omega[0]*n[1] - omega[1]*n[0]
+                ])
+                # 長さが1になるように正規化して更新
+                new_n = n + dn
+                self.marker_normal[p] = new_n / ti.math.length(new_n)
+
+仮値
+
+phase1_epsilon_lbm = 1.5
+phase1_num_iterations = 3
+u_solid = [0,0,0]
+仮処理
+
+先頭オブジェクトが円柱のときのみ sdf/phi 更新
+円柱SDFは X-Z 距離で算出（Y方向貫通）
+反復中は v += F_int/rho
+VPM は solver.update_macro 後段で適用
+
+--- v2.7 実装メモ（仮設定値・仮処理） ---
+- 対象ブランチ実装: refactoredv2.7
+- 仮設定値:
+  - phase2_num_iterations = 3（温度反復の目安回数）
+  - phase2_heat_relax = 1.0（反復中の温度仮更新係数）
+  - phase2_enable_iterative_thermal = True（温度反復のON/OFF）
+- 仮処理:
+  - τg の界面連続化は線形補間（tau_g = tau_g_fluid*(1-phi) + tau_g_solid*phi）
+  - 温度ソース項は Guo型補正（(1 - 0.5*omega_g) * w * S_g）を適用
+  - 反復中の温度仮更新は temp += phase2_heat_relax * S_g / rho の簡易形
+    （追記: フェーズ3でNu評価はプローブ法へ移行し、この簡易仮更新は収束補助としての位置づけに変更）
+  - 温度反復は obj_is_thermal == 1 のマーカーのみ対象
+
+--- v2.7 実装メモ（仮設定値・仮処理） ---
+- 対象ブランチ実装: refactoredv2.7
+- 仮設定値:
+  - phase3_probe_distance_lbm = 1.5（法線方向プローブ距離）
+  - phase3_enable_fsi_rotation = True（自由物体の回転FSI有効化）
+  - phase3_gravity_lbm = [0.0, 0.0, -9.8e-4]（外力フックの既定重力）
+- 仮処理:
+  - 慣性テンソルは未導入で、形状ごとのスカラー慣性モーメント近似を使用
+  - 姿勢はクォータニオン未導入で、法線を omega×n の微小回転で逐次更新
+  - NuはIBMマーカー法線方向の一次差分プローブ法で評価（k_fluidは FLUID_A 基準）

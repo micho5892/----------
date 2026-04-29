@@ -125,7 +125,7 @@ class Analytics:
         delta_T_ref: ti.types.f32,
         T_inlet_p: ti.types.f32,
     ) -> ti.types.vector(6, ti.f32):
-        # バルク温度: 質量流束重み Σ(ρ u_z T) / Σ(ρ u_z)（u_z は主流方向、ctx.rho はセル密度）
+        # バルク温度: 質量流束重み Σ(ρ u_z T) / Σ(ρ u_z)
         sum_mdT, sum_md = 0.0, 0.0
         sum_q_wall_p, area = 0.0, 0.0
         sum_kf, count_kf = 0.0, 0.0
@@ -148,7 +148,6 @@ class Analytics:
         for i, j in ti.ndrange(nx, ny):
             cid = ctx.cell_id[i, j, k_target]
             if self._is_solid_like(cid) == 1:
-                
                 sum_Tw += ctx.temp[i, j, k_target]
                 area_Tw += 1.0
                 sum_kw += self.k_table[cid]
@@ -161,8 +160,6 @@ class Analytics:
                     cid_n = ctx.cell_id[ip, jp, k_target]
                     if self._is_fluid(cid_n) == 1:
                         k_fluid = self.k_table[cid_n]
-                        # 物理的な壁面はノードから dx/2 の位置にあるため、距離 0.5 で割る
-                        # 壁面温度は 1.0、流体ノード温度は ctx.temp[ip, jp, k_target]
                         grad_nd = (1.0 - ctx.temp[ip, jp, k_target]) / 0.5
                         q_face_p = k_fluid * grad_nd * delta_T_ref / dx
                         
@@ -201,18 +198,129 @@ class Analytics:
             ]
         )
 
-    def get_local_Nu(self, ctx, k_target, log_thermal_slice=False):
-        pack = self._get_local_Nu_kernel(
-            ctx,
-            k_target,
-            self.cfg.nx,
-            self.cfg.ny,
-            self.cfg.dx,
-            self.cfg.Lx_p,
-            self.cfg.delta_T_ref,
-            self.cfg.T_inlet_p,
-        )
+    @ti.kernel
+    def _get_local_Nu_ibm_channel_kernel(
+        self,
+        ctx: ti.template(),
+        k_target: ti.i32,
+        nx: ti.i32,
+        ny: ti.i32,
+        dx: ti.types.f32,
+        delta_T_ref: ti.types.f32,
+        T_inlet_p: ti.types.f32,
+    ) -> ti.types.vector(6, ti.f32):
+        """
+        IBM での汎用的な Nu 数計算。
+        固体セルを探すのではなく、Thermal IBM が `ctx.S_g` に書き込んだ熱源強度の総和
+        を直接計測して壁からの熱流束を逆算する。
+        """
+        # バルク温度計算
+        sum_mdT = 0.0
+        sum_md = 0.0
+        sum_kf = 0.0
+        count_kf = 0.0
+        
+        # 断面における熱源(S_g)の総和を計算
+        sum_Sg_slice = 0.0
+        area = 0.0
+        
+        for i, j in ti.ndrange(nx, ny):
+            cid = ctx.cell_id[i, j, k_target]
+            # 流体セル（IBMが適用される空間）
+            if self._is_fluid(cid) == 1:
+                u_z = -ctx.v[i, j, k_target][2]
+                rho = ctx.rho[i, j, k_target]
+                t = ctx.temp[i, j, k_target]
+                md = rho * u_z
+                sum_mdT += md * t
+                sum_md += md
+                sum_kf += self.k_table[cid]
+                count_kf += 1.0
+                
+                # IBMマーカーから与えられた熱源(S_g)を積算
+                # ※ LBMの S_g は「単位時間・単位体積あたりの熱の湧き出し」
+                s_g_val = ctx.S_g[i, j, k_target]
+                if ti.abs(s_g_val) > 1e-12:
+                    sum_Sg_slice += s_g_val
+                    area += 1.0
+
+        T_bulk_nd = sum_mdT / sum_md if sum_md > 0 else 0.0
+        T_bulk_p = T_inlet_p + T_bulk_nd * delta_T_ref
+
+        # IBM壁での平均熱流束計算
+        # LBM方程式のソース項 S_g を物理的な熱流束 q に変換する。
+        # q = \sum S_g * k_fluid * (delta_T_ref / dx) / (加熱面積)
+        k_bulk_ref = sum_kf / count_kf if count_kf > 0 else 0.6
+        
+        # 周辺長(面積)が 0 なら 2*nx (平行平板の上下壁の長さ) で代用
+        actual_perimeter = area if area > 0 else float(2 * nx)
+        
+        # 無次元熱流束 q_nd = sum(S_g) / perimeter
+        q_nd = sum_Sg_slice / actual_perimeter
+        
+        # 物理的な熱流束へ変換
+        q_wall_p = k_bulk_ref * q_nd * delta_T_ref / dx
+
+        # IBMマーカーの目標温度 (現在は 1.0 固定と仮定)
+        T_wall_nd = 1.0 
+        T_wall_actual_p = T_inlet_p + T_wall_nd * delta_T_ref
+        
+        k_ref = k_bulk_ref # k_ref_mode=0
+        
+        denom = T_wall_actual_p - T_bulk_p
+        h_local = q_wall_p / denom if denom != 0 else 0.0
+        Nu_local = h_local * self.nu_l_ref_p / (k_ref + 1e-12)
+
+        cx = nx // 2
+        cy_mid = ny // 2
+        
+        # 任意形状対応のため、壁際温度はサンプリングしない(0を返す)
+        return ti.Vector([
+            Nu_local,
+            ctx.temp[cx, cy_mid, k_target],
+            0.0, 
+            T_bulk_p,
+            T_wall_actual_p,
+            q_wall_p
+        ])
+
+    def get_local_Nu(self, ctx, k_target, ibm=None, log_thermal_slice=False):
+        # ベンチマーク名で呼び出すカーネルを分岐
+        if self.cfg.benchmark_name == "parallel_plates_ibm" and ibm is not None:
+            k_fluid = float(self.k_table[0])
+            probe_pack = ibm.compute_probe_heat_flux(ctx, k_fluid)
+            sum_q = float(probe_pack[0])
+            sum_area = float(probe_pack[1])
+            q_wall_p = sum_q / sum_area if sum_area > 0.0 else 0.0
+
+            # 断面バルク温度は既存カーネルを流用して整合性を維持
+            base_pack = self._get_local_Nu_ibm_channel_kernel(
+                ctx, k_target, self.cfg.nx, self.cfg.ny, self.cfg.dx,
+                self.cfg.delta_T_ref, self.cfg.T_inlet_p
+            )
+            T_bulk_p = float(base_pack[3])
+            T_wall_actual_p = float(base_pack[4])
+            denom = T_wall_actual_p - T_bulk_p
+            h_local = q_wall_p / denom if abs(denom) > 1e-12 else 0.0
+            k_ref = k_fluid
+            nu = h_local * self.nu_l_ref_p / (k_ref + 1e-12)
+            if log_thermal_slice:
+                _log.info("T_bulk: %.6f, T_wall: %.6f", T_bulk_p, T_wall_actual_p)
+                _log.info("q_wall_p(probe): %.6e", q_wall_p)
+            return nu
+        elif self.cfg.benchmark_name == "parallel_plates_ibm":
+            pack = self._get_local_Nu_ibm_channel_kernel(
+                ctx, k_target, self.cfg.nx, self.cfg.ny, self.cfg.dx,
+                self.cfg.delta_T_ref, self.cfg.T_inlet_p
+            )
+        else:
+            pack = self._get_local_Nu_kernel(
+                ctx, k_target, self.cfg.nx, self.cfg.ny, self.cfg.dx, self.cfg.Lx_p,
+                self.cfg.delta_T_ref, self.cfg.T_inlet_p
+            )
+            
         nu = float(pack[0])
+
         if log_thermal_slice:
             t_center = float(pack[1])
             t_fluid_edge = float(pack[2])
@@ -234,10 +342,9 @@ class Analytics:
         total_temp = 0.0
         
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
-            # materials_dict と同じ判定基準で流体領域のみ対象にする
             if self._is_fluid(ctx.cell_id[i, j, k]) == 1:
                 v = ctx.v[i, j, k]
-                total_ke += v.dot(v)  # 速度ベクトル(x,y,z)の2乗和
+                total_ke += v.dot(v)  
                 total_temp += ctx.temp[i, j, k]
                 
         return ti.Vector([total_ke, total_temp])

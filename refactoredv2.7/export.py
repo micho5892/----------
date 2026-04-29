@@ -1,70 +1,235 @@
 # ==========================================================
-# export.py — 可視化フレーム構築・GIF出力（タスク3）
-# タスク8: GIF はレガシー/オプションとして残す。VTI は vtk_export.export_step を使用。
+# export.py — 可視化フレーム構築・GIF出力（Matplotlib リッチ版）
 # ==========================================================
-import numpy as np
+import io
+import queue
+import threading
+
 import imageio.v2 as imageio
+import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 from context import SOLID, SOLID_HEAT_SOURCE
 from lbm_logger import get_logger
 
 log = get_logger(__name__)
 
 
-def build_vis_frame(ctx, cfg):
-    """1ステップ分の可視化キャンバス（三面図＋パーティクル）を返す。"""
-    temp_np = ctx.temp.to_numpy()
-    cell_id_np = ctx.cell_id.to_numpy()
+def build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, cfg, current_time_p=0.0, step=0):
+    """NumPy配列からリッチ可視化フレーム（RGB配列）を生成する。"""
+    speed_np = np.linalg.norm(v_np, axis=-1)
+
+    # 固体セルをマスク（NaNにすることで、Matplotlibが自動で透明・背景色にしてくれる）
     mask_np = (cell_id_np == SOLID) | (cell_id_np == SOLID_HEAT_SOURCE)
+    temp_plot = np.where(mask_np, np.nan, temp_np)
+    speed_plot = np.where(mask_np, np.nan, speed_np)
+    
+    # 描画対象の断面インデックス
+    y_mid = cfg.ny // 2
+    x_mid = cfg.nx // 2
+    z_top = int(cfg.nz * 0.7)
+    
+    # 速度表示用の最大値（カラーバーの固定用）
+    v_max = np.nanmax(speed_plot)
+    if v_max < 1e-6: v_max = 1e-6  # ゼロ割回避
 
-    front = temp_np[:, cfg.ny//2, :]
-    front_mask = mask_np[:, cfg.ny//2, :]
-    side = temp_np[cfg.nx//2, :, :]
-    side_mask = mask_np[cfg.nx//2, :, :]
-    top_z = int(cfg.nz * 0.7)
-    top = temp_np[:, :, top_z]
-    top_mask = mask_np[:, :, top_z]
+    # Figureの作成 (1200 x 900 ピクセル程度の画像になる)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    fig.patch.set_facecolor('white')
+    
+    def add_fixed_colorbar(im, ax, fmt=None):
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.1)
+        if fmt:
+            fig.colorbar(im, cax=cax, format=fmt)
+        else:
+            fig.colorbar(im, cax=cax)
 
-    def make_rgb(val, msk):
-        rgb = np.zeros((*val.shape, 3), dtype=np.uint8)
-        t_mask = (msk == False)
-        p_mask = (msk == True)
-        rgb[:, :, 0][t_mask] = (np.clip(val[t_mask], 0, 1) * 255).astype(np.uint8)
-        rgb[:, :, 2][t_mask] = ((1 - np.clip(val[t_mask], 0, 1)) * 255).astype(np.uint8)
-        rgb[p_mask] = [128, 128, 128]
-        return rgb
+    # ==========================================
+    # 1. 左上: Front (XZ断面) - 温度場
+    # ==========================================
+    ax1 = axes[0, 0]
+    # Matplotlibのimshowは (行, 列) のため転置(.T)が必要
+    im1 = ax1.imshow(temp_plot[:, y_mid, :].T, origin='lower', cmap='coolwarm', vmin=0.0, vmax=1.0)
+    ax1.set_title("Temperature (Front: XZ-plane)")
+    ax1.set_xlabel("X")
+    ax1.set_ylabel("Z")
+    # fig.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im1, ax1)
 
-    front_rgb = np.flipud(np.transpose(make_rgb(front, front_mask), (1, 0, 2)))
-    side_rgb = np.flipud(np.transpose(make_rgb(side, side_mask), (1, 0, 2)))
-    top_rgb = np.flipud(np.transpose(make_rgb(top, top_mask), (1, 0, 2)))
+    # ==========================================
+    # 2. 左下: Front (XZ断面) - 速度場 ＋ 流線 (Streamline)
+    # ==========================================
+    ax2 = axes[1, 0]
+    im2 = ax2.imshow(speed_plot[:, y_mid, :].T, origin='lower', cmap='viridis', vmin=0.0, vmax=v_max)
+    ax2.set_title("Velocity & Streamlines (Front: XZ-plane)")
+    ax2.set_xlabel("X")
+    ax2.set_ylabel("Z")
+    # fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+    add_fixed_colorbar(im2, ax2, fmt="%.5f")
+    # 流線の描画
+    u_2d = v_np[:, y_mid, :, 0].T
+    w_2d = v_np[:, y_mid, :, 2].T
+    # 速度がほぼゼロの領域は流線を引かないようマスク
+    u_2d = np.where(np.isnan(speed_plot[:, y_mid, :].T), 0, u_2d)
+    w_2d = np.where(np.isnan(speed_plot[:, y_mid, :].T), 0, w_2d)
+    
+    X, Z = np.meshgrid(np.arange(cfg.nx), np.arange(cfg.nz))
+    ax2.streamplot(X, Z, u_2d, w_2d, color='white', linewidth=0.8, density=1.2, arrowsize=1.5)
 
-    h_top, w_top = top_rgb.shape[:2]
-    h_front, w_front = front_rgb.shape[:2]
-    h_side, w_side = side_rgb.shape[:2]
-    total_h = h_top + h_front
-    total_w = max(w_top, w_front + w_side)
-    canvas = np.zeros((total_h, total_w, 3), dtype=np.uint8)
-    canvas[0:h_top, 0:w_top] = top_rgb
-    canvas[h_top:total_h, 0:w_front] = front_rgb
-    canvas[h_top:total_h, w_front:w_front+w_side] = side_rgb
+    # ==========================================
+    # 3. 右上: Top (XY断面) - 温度場
+    # ==========================================
+    ax3 = axes[0, 1]
+    im3 = ax3.imshow(temp_plot[:, :, z_top].T, origin='lower', cmap='coolwarm', vmin=0.0, vmax=1.0)
+    ax3.set_title(f"Temperature (Top: XY-plane, Z={z_top})")
+    ax3.set_xlabel("X")
+    ax3.set_ylabel("Y")
+    fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
+    # add_fixed_colorbar(im3, ax3)
 
-    p_pos = ctx.particle_pos.to_numpy()
-    for p in p_pos:
-        if not np.isfinite(p).all():
-            continue
-        x, y, z = int(p[0]), int(p[1]), int(p[2])
-        z_draw = cfg.nz - 1 - z
-        y_draw_top = cfg.ny - 1 - y
-        if 0 <= x < cfg.nx and 0 <= y_draw_top < cfg.ny:
-            canvas[y_draw_top, x] = [255, 255, 255]
-        if 0 <= x < cfg.nx and 0 <= z_draw < cfg.nz:
-            canvas[h_top + z_draw, x] = [255, 255, 255]
-        if 0 <= y < cfg.ny and 0 <= z_draw < cfg.nz:
-            canvas[h_top + z_draw, w_front + y] = [255, 255, 255]
+    # ==========================================
+    # 4. 右下: Side (YZ断面) - 温度場
+    # ==========================================
+    ax4 = axes[1, 1]
+    im4 = ax4.imshow(temp_plot[x_mid, :, :].T, origin='lower', cmap='coolwarm', vmin=0.0, vmax=1.0)
+    ax4.set_title("Temperature (Side: YZ-plane)")
+    ax4.set_xlabel("Y")
+    ax4.set_ylabel("Z")
+    fig.colorbar(im4, ax=ax4, fraction=0.046, pad=0.04)
+    # add_fixed_colorbar(im4, ax4)
 
+    # 全体のタイトルに時間を表示
+    fig.suptitle(f"Time: {current_time_p:.3f} s  |  Step: {step}", fontsize=16, fontweight='bold')
+    plt.subplots_adjust(left=0.05, right=0.92, top=0.90, bottom=0.05, wspace=0.3, hspace=0.3)
+
+    # --- Figure を RGB NumPy 配列に変換 ---
+    buf = io.BytesIO()
+    plt.savefig(buf, format='raw', dpi=100)
+    buf.seek(0)
+    img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8).reshape(
+        int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1
+    )
+    
+    # RGBAのA(アルファ値)を落としてRGBにする
+    canvas = img_arr[:, :, :3]
+    
+    plt.close(fig)
     return canvas
 
 
+def build_vis_frame(ctx, cfg, current_time_p=0.0, step=0):
+    """互換ラッパー: コンテキストから可視化フレームを生成する。"""
+    temp_np = ctx.temp.to_numpy()
+    v_np = ctx.v.to_numpy()
+    cell_id_np = ctx.cell_id.to_numpy()
+    return build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, cfg, current_time_p, step)
+
+
+def _open_animation_writer(filename, fps):
+    if str(filename).lower().endswith(".mp4"):
+        return imageio.get_writer(
+            filename,
+            fps=fps,
+            codec="libx264",
+            quality=8,
+            macro_block_size=1,
+        )
+    return imageio.get_writer(filename, fps=fps)
+
 def export_gif_frames(frames, filename, fps=12):
-    """フレーム列をGIFファイルに保存する。"""
     imageio.mimsave(filename, frames, fps=fps)
     log.info("GIF saved: %s", filename)
+
+def export_mp4_frames(frames, filename, fps=30):
+    with _open_animation_writer(filename, fps=max(1, int(fps))) as writer:
+        for frame in frames:
+            writer.append_data(frame)
+    log.info("MP4 saved: %s", filename)
+
+def export_animation_frames(frames, filename, fps=12):
+    lower_name = str(filename).lower()
+    if lower_name.endswith(".mp4"):
+        export_mp4_frames(frames, filename, fps=max(1, int(fps)))
+    else:
+        export_gif_frames(frames, filename, fps=max(1, int(fps)))
+
+
+class AsyncAnimationPipeline:
+    """
+    可視化フレーム生成 + エンコードをバックグラウンドで処理する。
+    キュー満杯時は drop_policy に従って計算スレッドをブロックしない。
+    """
+    def __init__(self, cfg, filename, fps=12, max_queue=8, drop_policy="drop_oldest"):
+        self.cfg = cfg
+        self.filename = filename
+        self.fps = max(1, int(fps))
+        self.max_queue = max(1, int(max_queue))
+        self.drop_policy = str(drop_policy).lower()
+        if self.drop_policy not in ("drop_oldest", "drop_newest"):
+            self.drop_policy = "drop_oldest"
+        self._q = queue.Queue(maxsize=self.max_queue)
+        self._stop_token = object()
+        self._writer = None
+        self._thread = None
+        self._started = False
+        self.submitted = 0
+        self.written = 0
+        self.dropped = 0
+
+    def start(self):
+        if self._started:
+            return
+        self._writer = _open_animation_writer(self.filename, self.fps)
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        self._started = True
+
+    def _run(self):
+        while True:
+            item = self._q.get()
+            if item is self._stop_token:
+                self._q.task_done()
+                break
+            temp_np, v_np, cell_id_np, current_time_p, step = item
+            frame = build_vis_frame_from_arrays(temp_np, v_np, cell_id_np, self.cfg, current_time_p, step)
+            self._writer.append_data(frame)
+            self.written += 1
+            self._q.task_done()
+
+    def submit_snapshot(self, temp_np, v_np, cell_id_np, current_time_p, step):
+        if not self._started:
+            self.start()
+        self.submitted += 1
+        item = (temp_np, v_np, cell_id_np, float(current_time_p), int(step))
+        if not self._q.full():
+            self._q.put_nowait(item)
+            return True
+        if self.drop_policy == "drop_oldest":
+            try:
+                self._q.get_nowait()
+                self._q.task_done()
+                self.dropped += 1
+            except queue.Empty:
+                pass
+            self._q.put_nowait(item)
+            return True
+        self.dropped += 1
+        return False
+
+    def close(self):
+        if not self._started:
+            return
+        self._q.put(self._stop_token)
+        self._thread.join()
+        self._writer.close()
+
+    def stats(self):
+        return {
+            "submitted": self.submitted,
+            "written": self.written,
+            "dropped": self.dropped,
+            "drop_policy": self.drop_policy,
+            "max_queue": self.max_queue,
+        }

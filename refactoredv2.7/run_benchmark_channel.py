@@ -20,10 +20,12 @@ run_optimize = None
 try:
     lbm_opt = importlib.import_module("lbm_param_optimize")
     get_fluid_properties_coolprop = getattr(lbm_opt, "get_fluid_properties_coolprop", None)
-    
 except Exception:
     # sim の実行自体を止めない（optimizer 側の依存が無い場合があるため）
     run_optimize = None
+
+    def get_fluid_properties_coolprop(*args, **kwargs):
+        return None
 
 # 解析解用の物理パラメータ（平均速度 U_mean に整合する圧力勾配を内部で決定）
 # run_channel_benchmark 内で CoolProp（またはフォールバック）と同期する
@@ -271,7 +273,7 @@ def plot_poiseuille_validation(y_coords, w_fluid, t_fluid, U_inlet, out_dir, T_w
     plot_path = os.path.join(out_dir, "Poiseuille_Thermal_Validation.png")
     plt.savefig(plot_path, dpi=300)
     print(f"\n[SUCCESS] Validation plot saved to: {plot_path}")
-    plt.show()
+    plt.show(block=False)
 
 def run_channel_benchmark(artifact_parent=None):
     """
@@ -323,6 +325,7 @@ def run_channel_benchmark(artifact_parent=None):
         
         max_time_p=240.0,  
         ramp_time_p=1.0,  # 衝撃波を防ぐためソフトスタート
+        visualization_mode="offline",
         
         vis_interval=100, 
         vti_export_interval=0, particles_inject_per_step=0,
@@ -365,6 +368,123 @@ def run_channel_benchmark(artifact_parent=None):
     y_coords, w_prof, t_prof = extract_channel_profiles_from_npz(npz_path, nx, ny, nz)
     plot_poiseuille_validation(y_coords, w_prof, t_prof, U_inlet_p, out_dir)
 
+
+def run_channel_benchmark_lbm(artifact_parent=None):
+    """
+    `run_channel_benchmark` と同一の格子・物性・境界（周期 X、入口温度・速度など）。
+    等温の上下壁だけ IBM 平板（無次元温度 1.0）に置き換え、固体 ID=10 の等温壁 BC は使わない。
+    """
+    print(f"==================================================")
+    print(f" Starting Poiseuille Flow & Heat Transfer Validation (IBM isothermal walls)")
+    print(f"==================================================")
+
+    # --- パラメータの設定（run_channel_benchmark と同一） ---
+    fp = get_fluid_properties_coolprop("Air", 300.0, 101325.0)  # "Water"
+    if fp is None:
+        print(
+            "[WARN] CoolProp が使えないため、空気の代表物性にフォールバックします。"
+            "（Pr ≈ 0.71 付近の意図は維持されますが、数値は文献値と完全一致しません）"
+        )
+        fp = dict(_AIR_FALLBACK_FP)
+    nx, ny, nz = 32, 64, 512  # Z方向に長くして、風が発達しきる距離を稼ぐ
+    Lx_p = 0.1
+    U_inlet_p = 0.005  # 綺麗な層流を保つため、流速は少し遅め（断面平均として解析解と対応）
+    global RHO_FLUID, MU_PHYS
+    RHO_FLUID = fp["rho_f"]
+    MU_PHYS = fp["nu"] * RHO_FLUID
+    print_benchmark_fluid_intent(fp, u_inlet_p=U_inlet_p, lx_p=Lx_p, nx=nx, ny=ny)
+    if artifact_parent is None:
+        artifact_parent = os.path.join("results", "validation_poiseuille")
+    run_paths = {}
+    WALL_LBM = 10
+
+    # --- シミュレーションの実行 ---
+    run_simulation(
+        benchmark="parallel_plates_ibm",
+        artifact_parent=artifact_parent,
+        paths_out=run_paths,
+        fp_dtype="float32",
+        steady_detection=False,
+        steady_window_p=2.0,
+        steady_tolerance=0.001,
+        steady_extra_p=0.5,
+        periodic_x=True,
+        periodic_y=False,
+        periodic_z=False,
+
+        nx=nx,
+        ny=ny,
+        nz=nz,
+        Lx_p=Lx_p,
+        U_inlet_p=U_inlet_p,
+
+        max_time_p=240.0,
+        ramp_time_p=1.0,
+        visualization_mode="offline",
+
+        vis_interval=100,
+        vti_export_interval=0,
+        particles_inject_per_step=0,
+
+        sponge_thickness=0.0,
+
+        domain_properties={
+            0: {"nu": fp["nu"], "k": fp["k_f"], "rho": fp["rho_f"], "Cp": fp["Cp_f"]},
+            10: {"nu": 0.0, "k": 400.0, "rho": 8960.0, "Cp": 385.0},
+            20: {"nu": fp["nu"], "k": fp["k_f"], "rho": fp["rho_f"], "Cp": fp["Cp_f"]},
+            21: {"nu": fp["nu"], "k": fp["k_f"], "rho": fp["rho_f"], "Cp": fp["Cp_f"]},
+        },
+
+        boundary_conditions={
+            20: {"type": "inlet", "velocity": [0.0, 0.0, -U_inlet_p], "temperature": 0.0},
+            21: {"type": "outlet"},
+        },
+        physics_models={
+            "immersed_boundary": {
+                "objects": [
+                    {
+                        "shape": "y_plate",
+                        "side": "lower",
+                        "wall_thickness_lbm": WALL_LBM,
+                        "i_min_lbm": 0,
+                        "i_max_excl_lbm": nx,
+                        "type": "fixed",
+                        "temperature": 1.0,
+                    },
+                    {
+                        "shape": "y_plate",
+                        "side": "upper",
+                        "wall_thickness_lbm": WALL_LBM,
+                        "i_min_lbm": 0,
+                        "i_max_excl_lbm": nx,
+                        "type": "fixed",
+                        "temperature": 1.0,
+                    },
+                ]
+            }
+        },
+    )
+
+    out_dir = run_paths.get("out_dir")
+    if not out_dir or not os.path.isdir(out_dir):
+        print("[ERROR] run_simulation did not return a valid output directory (paths_out).")
+        return
+
+    npz_path = run_paths.get("npz_path")
+    if not npz_path or not os.path.isfile(npz_path):
+        npz_files = [f for f in os.listdir(out_dir) if f.endswith("_fields.npz")]
+        if not npz_files:
+            print("[ERROR] No .npz field data found.")
+            return
+        npz_files.sort(key=lambda f: os.path.getmtime(os.path.join(out_dir, f)), reverse=True)
+        npz_path = os.path.join(out_dir, npz_files[0])
+    
+    # プロファイルの抽出とプロット
+    y_coords, w_prof, t_prof = extract_channel_profiles_from_npz(npz_path, nx, ny, nz)
+    plot_poiseuille_validation(y_coords, w_prof, t_prof, U_inlet_p, out_dir)
+
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -378,4 +498,4 @@ if __name__ == "__main__":
         help="実行ごとのサブフォルダを作成する親ディレクトリ（既定: results/validation_poiseuille）",
     )
     args = parser.parse_args()
-    run_channel_benchmark(artifact_parent=args.artifact_parent)
+    run_channel_benchmark_lbm(artifact_parent=args.artifact_parent)

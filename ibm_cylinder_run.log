@@ -416,3 +416,16 @@
 2026-04-13 06:53:48 [INFO] lbm.__main__:  Lift Coefficient Amp  (C_L) : ±0.0003  (Target: ~±0.3)
 2026-04-13 06:53:48 [INFO] lbm.__main__:  Strouhal Number       (St)  : 0.1440  (Target: ~0.165)
 2026-04-13 06:53:49 [INFO] lbm.__main__: Validation plot saved to: results\ibm_cylinder_Re100\empty_domain_20260413_061419\IBM_Cylinder_Validation_Re100.png
+2026-04-13 09:30:41 [INFO] lbm.__main__: 
+=== Optimizing for IBM Cylinder (Re = 100.0) ===
+2026-04-13 09:30:41 [INFO] lbm.__main__: Optimization successful. Actual Re: 99.91
+2026-04-13 09:30:41 [INFO] lbm.__main__: Simulation artifacts will be under: C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション\results\ibm_cylinder_Re100/<run_subdir>/ (same folder as .log and .npz)
+2026-04-13 09:30:42 [DEBUG] lbm.config: SimConfig: benchmark=empty_domain grid=200x4x400
+2026-04-13 09:30:42 [DEBUG] lbm.context: SimulationContext: grid 200 x 4 x 400
+2026-04-13 09:30:42 [DEBUG] lbm.d3q19: D3Q19 lattice initialized (fp_dtype=f32)
+2026-04-13 09:30:42 [DEBUG] lbm.solver: LBMSimulator initialized (D3Q19, fp_dtype=f32)
+2026-04-13 09:30:42 [DEBUG] lbm.boundary: BoundaryManager: before_macro=2, after_macro=0
+2026-04-13 09:30:43 [DEBUG] lbm.immersed_boundary: IBManager initialized: 1 objects, 500 total markers
+2026-04-13 09:30:43 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=200 ny=4)
+2026-04-13 09:30:43 [DEBUG] lbm.nu_models: build_nu_model: benchmark=empty_domain
+2026-04-13 09:30:43 [DEBUG] lbm.wall_metrics: channel_hydraulic_diameter_p: D_h=0.0 (nx=200 ny=4)
