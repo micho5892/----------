@@ -42,6 +42,8 @@ alpha_s = sp.Symbol(r"\alpha_s", positive=True, real=True)
 Re = sp.Symbol("Re", positive=True, real=True)
 Pr = sp.Symbol("Pr", positive=True, real=True)
 C_r = sp.Symbol("C_r", positive=True, real=True)
+beta_f = sp.Symbol(r"\beta_f", positive=True, real=True)
+Ra = sp.Symbol("Ra", positive=True, real=True)
 
 Re_Delta = sp.Symbol(r"Re_{\Delta}", positive=True, real=True)
 Pe_Delta = sp.Symbol(r"Pe_{\Delta,f}", positive=True, real=True)
@@ -75,6 +77,8 @@ var_info = {
     Re: {"name": "Re", "desc": "レイノルズ数", "default": 500.0},
     Pr: {"name": "Pr", "desc": "プラントル数", "default": 7.0},
     C_r: {"name": "C_r", "desc": "熱容量比 (固体/流体)", "default": (8960.0 * 385.0) / (1000.0 * 4180.0)},
+    beta_f: {"name": "beta_f", "desc": "体膨張係数 (流体) [1/K]", "default": 2.0e-4},
+    Ra: {"name": "Ra", "desc": "レイリー数", "default": 1.0e5},
     Re_Delta: {"name": "Re_Delta", "desc": "セル・レイノルズ数", "default": 5.0},
     Pe_Delta: {"name": "Pe_Delta_f", "desc": "セル・ペクレ数 (流体)", "default": 35.0},
     Pe_Delta_s: {"name": "Pe_Delta_s", "desc": "セル・ペクレ数 (固体)", "default": 5.0},
@@ -87,7 +91,21 @@ var_info = {
 }
 all_vars = list(var_info.keys())
 
-PRIMARY_PARAM_NAMES = ("nx", "L_domain", "L_ref", "U", "u_lbm", "nu", "k_f", "rho_f", "Cp_f", "k_s", "rho_s", "Cp_s")
+PRIMARY_PARAM_NAMES = (
+    "nx",
+    "L_domain",
+    "L_ref",
+    "U",
+    "u_lbm",
+    "nu",
+    "k_f",
+    "rho_f",
+    "Cp_f",
+    "k_s",
+    "rho_s",
+    "Cp_s",
+    "beta_f",
+)
 
 ALL_VARIABLE_NAMES = {var_info[s]["name"] for s in all_vars}
 
@@ -112,11 +130,13 @@ def get_fluid_properties_coolprop(substance_name, temperature_kelvin, pressure_p
         kinematic_viscosity = dynamic_viscosity / density
         thermal_conductivity = CP.PropsSI("CONDUCTIVITY", "T", temperature_kelvin, "P", pressure_pa, substance_name)
         specific_heat_cp = CP.PropsSI("CPMASS", "T", temperature_kelvin, "P", pressure_pa, substance_name)
+        beta = CP.PropsSI("ISOBARIC_EXPANSION_COEFFICIENT", "T", temperature_kelvin, "P", pressure_pa, substance_name)
         return {
             "rho_f": float(density),
             "nu": float(kinematic_viscosity),
             "k_f": float(thermal_conductivity),
             "Cp_f": float(specific_heat_cp),
+            "beta_f": float(beta),
         }
     except Exception:
         return None
@@ -141,6 +161,7 @@ def compute_all_state_from_primary(primary):
     k_s_v = float(primary["k_s"])
     rho_s_v = float(primary["rho_s"])
     Cp_s_v = float(primary["Cp_s"])
+    beta_f_v = float(primary["beta_f"])
 
     dx_v = L_dom / nx_v
     dt_v = dx_v * (u_lbm_v / U)
@@ -150,6 +171,7 @@ def compute_all_state_from_primary(primary):
     Pr_v = nu_v / alpha_f_v
     Pe_v = Re_v * Pr_v
     C_r_v = (rho_s_v * Cp_s_v) / (rho_f_v * Cp_f_v)
+    Ra_v = 9.81 * beta_f_v * (L_ref_v ** 3) / (nu_v * alpha_f_v)
     Re_Delta_v = U * dx_v / nu_v
     Pe_Delta_f_v = U * dx_v / alpha_f_v
     Pe_Delta_s_v = U * dx_v / alpha_s_v
@@ -173,6 +195,7 @@ def compute_all_state_from_primary(primary):
         "k_s": k_s_v,
         "rho_s": rho_s_v,
         "Cp_s": Cp_s_v,
+        "beta_f": beta_f_v,
         "dx": dx_v,
         "dt": dt_v,
         "alpha_f": alpha_f_v,
@@ -181,6 +204,7 @@ def compute_all_state_from_primary(primary):
         "Pr": Pr_v,
         "Pe": Pe_v,
         "C_r": C_r_v,
+        "Ra": Ra_v,
         "Re_Delta": Re_Delta_v,
         "Pe_Delta_f": Pe_Delta_f_v,
         "Pe_Delta_s": Pe_Delta_s_v,
@@ -201,6 +225,7 @@ eqs_solver = [
     sp.Eq(Re, u * L_ref / nu),
     sp.Eq(Pr, nu / alpha_f),
     sp.Eq(C_r, (rho_s * Cp_s) / (rho_f * Cp_f)),
+    sp.Eq(Ra, 9.81 * beta_f * (L_ref**3) / (nu * alpha_f)),
     sp.Eq(Re_Delta, u * dx / nu),
     sp.Eq(Pe_Delta, u * dx / alpha_f),
     sp.Eq(Pe_Delta_s, u * dx / alpha_s),
@@ -221,6 +246,7 @@ eqs_macro_display = [
     sp.Eq(alpha_f, k_f / (rho_f * Cp_f)),
     sp.Eq(alpha_s, k_s / (rho_s * Cp_s)),
     sp.Eq(C_r, (rho_s * Cp_s) / (rho_f * Cp_f)),
+    sp.Eq(Ra, 9.81 * beta_f * (L_ref**3) / (nu * alpha_f)),
     sp.Eq(Re, u * L_ref / nu),
     sp.Eq(Pr, nu / alpha_f),
     sp.Eq(dt, dx * (u_lbm / u)),

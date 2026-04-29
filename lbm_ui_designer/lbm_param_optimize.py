@@ -77,6 +77,7 @@ def default_primary_from_coolprop(cfg: dict) -> dict:
     out["k_f"] = fp["k_f"]
     out["rho_f"] = fp["rho_f"]
     out["Cp_f"] = fp["Cp_f"]
+    out["beta_f"] = fp["beta_f"]
     out["k_s"] = sp["k_s"]
     out["rho_s"] = sp["rho_s"]
     out["Cp_s"] = sp["Cp_s"]
@@ -232,6 +233,8 @@ def run_optimize(cfg: dict) -> dict:
             bounds.append((1.0, 20000.0))
         elif k in ("Cp_f", "Cp_s"):
             bounds.append((50.0, 20000.0))
+        elif k == "beta_f":
+            bounds.append((1e-8, 1e-1))
         else:
             raise RuntimeError(f"内部エラー: 未対応の一次パラメータ {k}")
 

@@ -160,7 +160,7 @@ def run_simulation(**kwargs):
         _ti_initialized = True
 
     benchmark = kwargs.pop("benchmark", "cylinder")
-    state = kwargs.pop("state", None)
+    state = kwargs.pop("state", {})
     kwargs["benchmark_name"] = benchmark
 
     # kwargsからエクスポート設定を取得
@@ -172,6 +172,7 @@ def run_simulation(**kwargs):
     steady_window_p = kwargs.pop("steady_window_p", 1.0)    
     steady_tolerance = kwargs.pop("steady_tolerance", 0.001) 
     steady_extra_p = kwargs.pop("steady_extra_p", 2.0)      
+    max_time_p = kwargs.pop("max_time_p", 10.0) 
 
     # 出力先: artifact_parent を指定すると「その直下に 1 実行ごとのサブフォルダ」を作成する。
     # 未指定かつ out_dir も無いときの既定の親は results（従来と同様に results/<benchmark>_<timestamp>/）。
@@ -215,14 +216,6 @@ def run_simulation(**kwargs):
 
     cfg = SimConfig(**kwargs)
 
-    if "max_time_p" not in kwargs:
-        if "nx" in state and "nz" in state:
-            max_time_p = state["nx"] * state["nz"] / state["alpha_f"] + max(ramp_time_p,  cfg.sponge_strength_decay_start_p + cfg.sponge_strength_decay_duration_p)
-            max_time_p += steady_extra_p
-        else:
-            max_time_p = 10.0
-    else:
-        max_time_p = kwargs.pop("max_time_p") 
 
     # IBM の力ログなど、実行フォルダ（.log / .npz と同階層）に出す
     cfg.out_dir = os.path.abspath(out_dir)
