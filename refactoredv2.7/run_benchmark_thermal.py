@@ -108,20 +108,20 @@ def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_eff, alpha_f,
     ref = DE_VAHL_DAVIS_DATA.get(target_Ra)
     print(f"\n=== Benchmark Results (Ra = {target_Ra:.1e}) ===")
     if ref:
-        print(f"| Metric                     | LBM (Present) | de Vahl Davis | Error (%) |")
-        print(f"|----------------------------|---------------|---------------|-----------|")
-        print(f"| Max U-vel (Local Pe_x)     | {sim_U_max:13.3f} | {ref['U_max']:13.3f} | {abs(sim_U_max-ref['U_max'])/ref['U_max']*100:8.2f}% |")
-        print(f"| Z location of Max U-vel    | {sim_Z_Umax:13.3f} | {ref['Z_Umax']:13.3f} | {abs(sim_Z_Umax-ref['Z_Umax'])/ref['Z_Umax']*100:8.2f}% |")
-        print(f"| Max W-vel (Local Pe_z)     | {sim_W_max:13.3f} | {ref['W_max']:13.3f} | {abs(sim_W_max-ref['W_max'])/ref['W_max']*100:8.2f}% |")
-        print(f"| X location of Max W-vel    | {sim_X_Wmax:13.3f} | {ref['X_Wmax']:13.3f} | {abs(sim_X_Wmax-ref['X_Wmax'])/ref['X_Wmax']*100:8.2f}% |")
-        print(f"|----------------------------|---------------|---------------|-----------|")
-        print(f"| Avg Nu (Overall)           | {sim_Nu_avg:13.3f} | {ref['Nu_avg']:13.3f} | {abs(sim_Nu_avg-ref['Nu_avg'])/ref['Nu_avg']*100:8.2f}% |")
-        print(f"| Avg Nu (Mid-plane X=0.5)   | {sim_Nu_half:13.3f} | {ref['Nu_1/2']:13.3f} | {abs(sim_Nu_half-ref['Nu_1/2'])/ref['Nu_1/2']*100:8.2f}% |")
-        print(f"| Avg Nu (Boundary X=0)      | {sim_Nu_0:13.3f} | {ref['Nu_0']:13.3f} | {abs(sim_Nu_0-ref['Nu_0'])/ref['Nu_0']*100:8.2f}% |")
-        print(f"| Max Nu (Boundary X=0)      | {sim_Nu_max:13.3f} | {ref['Nu_max']:13.3f} | {abs(sim_Nu_max-ref['Nu_max'])/ref['Nu_max']*100:8.2f}% |")
-        print(f"| Z location of Max Nu       | {sim_Z_Numax:13.3f} | {ref['Z_Numax']:13.3f} | {abs(sim_Z_Numax-ref['Z_Numax'])/ref['Z_Numax']*100:8.2f}% |")
-        print(f"| Min Nu (Boundary X=0)      | {sim_Nu_min:13.3f} | {ref['Nu_min']:13.3f} | {abs(sim_Nu_min-ref['Nu_min'])/ref['Nu_min']*100:8.2f}% |")
-        print(f"| Z location of Min Nu       | {sim_Z_Numin:13.3f} | {ref['Z_Numin']:13.3f} | {abs(sim_Z_Numin-ref['Z_Numin'])/ref['Z_Numin']*100:8.2f}% |")
+        _log.info(f"| Metric                     | LBM (Present) | de Vahl Davis | Error (%) |")
+        _log.info(f"|----------------------------|---------------|---------------|-----------|")
+        _log.info(f"| Max U-vel (Local Pe_x)     | {sim_U_max:13.3f} | {ref['U_max']:13.3f} | {abs(sim_U_max-ref['U_max'])/ref['U_max']*100:8.2f}% |")
+        _log.info(f"| Z location of Max U-vel    | {sim_Z_Umax:13.3f} | {ref['Z_Umax']:13.3f} | {abs(sim_Z_Umax-ref['Z_Umax'])/ref['Z_Umax']*100:8.2f}% |")
+        _log.info(f"| Max W-vel (Local Pe_z)     | {sim_W_max:13.3f} | {ref['W_max']:13.3f} | {abs(sim_W_max-ref['W_max'])/ref['W_max']*100:8.2f}% |")
+        _log.info(f"| X location of Max W-vel    | {sim_X_Wmax:13.3f} | {ref['X_Wmax']:13.3f} | {abs(sim_X_Wmax-ref['X_Wmax'])/ref['X_Wmax']*100:8.2f}% |")
+        _log.info(f"|----------------------------|---------------|---------------|-----------|")
+        _log.info(f"| Avg Nu (Overall)           | {sim_Nu_avg:13.3f} | {ref['Nu_avg']:13.3f} | {abs(sim_Nu_avg-ref['Nu_avg'])/ref['Nu_avg']*100:8.2f}% |")
+        _log.info(f"| Avg Nu (Mid-plane X=0.5)   | {sim_Nu_half:13.3f} | {ref['Nu_1/2']:13.3f} | {abs(sim_Nu_half-ref['Nu_1/2'])/ref['Nu_1/2']*100:8.2f}% |")
+        _log.info(f"| Avg Nu (Boundary X=0)      | {sim_Nu_0:13.3f} | {ref['Nu_0']:13.3f} | {abs(sim_Nu_0-ref['Nu_0'])/ref['Nu_0']*100:8.2f}% |")
+        _log.info(f"| Max Nu (Boundary X=0)      | {sim_Nu_max:13.3f} | {ref['Nu_max']:13.3f} | {abs(sim_Nu_max-ref['Nu_max'])/ref['Nu_max']*100:8.2f}% |")
+        _log.info(f"| Z location of Max Nu       | {sim_Z_Numax:13.3f} | {ref['Z_Numax']:13.3f} | {abs(sim_Z_Numax-ref['Z_Numax'])/ref['Z_Numax']*100:8.2f}% |")
+        _log.info(f"| Min Nu (Boundary X=0)      | {sim_Nu_min:13.3f} | {ref['Nu_min']:13.3f} | {abs(sim_Nu_min-ref['Nu_min'])/ref['Nu_min']*100:8.2f}% |")
+        _log.info(f"| Z location of Min Nu       | {sim_Z_Numin:13.3f} | {ref['Z_Numin']:13.3f} | {abs(sim_Z_Numin-ref['Z_Numin'])/ref['Z_Numin']*100:8.2f}% |")
     
     # プロファイル可視化
     plt.figure(figsize=(15, 5))
@@ -167,7 +167,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
     print(f" 差温キャビティ内の自然対流 (Ra={target_Ra:.1e}) の精度検証")
     print("="*60)
     
-    nx = nz = 128 * 4
+    nx = nz = 128
     ny = 4
     # nz = 128
     L_domain = 0.1
@@ -189,19 +189,23 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
             # "nu": True, "k_f": True, "rho_f": True, "k_s": True,
             "L_domain": L_domain, 
             "L_ref": L_eff,
-            "u_lbm": 0.04,         # 安全で安定なLBMマッハ数
+            "u_lbm": 0.05,         # 安全で安定なLBMマッハ数
             "U": 1.0,               # 計算基準用のダミー速度
         },
         "ranges": {
             # "tau_f マージン": {"min": 0.1, "max": 2.0},
+            "Ra": {"min": target_Ra-1, "max": target_Ra+1},
+            "Pr": {"min": 0.707, "max": 0.713},
         },
         "targets": {
-            "Ra": {"value": target_Ra, "weight": 1.0},
-            'alpha_f': {"value": 2.2274814744444102e-02, "weight": 2.0},
+            # "Ra": {"value": target_Ra, "weight": 1.0},
+            'alpha_f': {"value": 2.2274814744444102e-04, "weight": 1},
+            # "Pr": {"value": 0.71, "weight": 1.0},
+            # "tau_f マージン": {"value": 0., "weight": 1.0},
         },
-        "target_regularization": 1,
-        "regularization": 1.0e-5,
-        "maxiter": 30000,
+        "target_regularization": 1.0,
+        "regularization": 1.0e-9,
+        "maxiter": 300000,
     }
 
     result = run_optimize(config_thermal)
@@ -243,7 +247,7 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
     
     # 熱拡散にかかる物理時間を計算し、確実に定常に達するまでの時間を指定
     t_c = (L_eff**2) / alpha_f
-    max_time_p = t_c * 5.0
+    max_time_p = t_c * 2.0
     print(f">>> Optimized Thermal Time Scale t_c = {t_c:.3f} s.")
     print(f">>> Running simulation up to 5 t_c = {max_time_p:.3f} s to guarantee steady state.")
     
@@ -265,12 +269,13 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         u_lbm=state["u_lbm"],    
         output_format="mp4",
         visualization_mode="offline",
+        target_video_fps=60,
         
-        # max_time_p=max_time_p, 
-        max_time_p=3, 
+        max_time_p=max_time_p, 
+        # max_time_p=3, 
         ramp_time_p=0.0,
         
-        vis_interval=200, 
+        # vis_interval=200, 
         vti_export_interval=0, particles_inject_per_step=0,
         sponge_thickness=0.0,
         

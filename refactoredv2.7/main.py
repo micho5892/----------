@@ -177,6 +177,7 @@ def run_simulation(**kwargs):
     steady_tolerance = kwargs.pop("steady_tolerance", 0.001) 
     steady_extra_p = kwargs.pop("steady_extra_p", 2.0)      
     max_time_p = kwargs.pop("max_time_p", 10.0) 
+    target_video_fps = kwargs.pop("target_video_fps", None)
     visualization_mode = str(kwargs.pop("visualization_mode", "realtime")).lower().strip()
     if visualization_mode not in ("realtime", "offline", "none"):
         visualization_mode = "realtime"
@@ -228,6 +229,16 @@ def run_simulation(**kwargs):
     logger.info("Output run directory: %s", os.path.abspath(out_dir))
 
     cfg = SimConfig(**kwargs)
+    if target_video_fps is not None:
+        target_video_fps = max(1.0, float(target_video_fps))
+        auto_vis_interval = max(1, int(round(1.0 / (target_video_fps * cfg.dt))))
+        cfg.vis_interval = auto_vis_interval
+        logger.info(
+            "Auto vis_interval enabled: target_video_fps=%.3f, dt=%.6e => vis_interval=%d",
+            target_video_fps,
+            cfg.dt,
+            cfg.vis_interval,
+        )
 
 
     # IBM の力ログなど、実行フォルダ（.log / .npz と同階層）に出す
@@ -311,7 +322,10 @@ def run_simulation(**kwargs):
     global_steady_time_p = None
 
     frames =[]
-    fps = int(1 / (cfg.vis_interval * cfg.dt))
+    if target_video_fps is not None:
+        fps = max(1, int(round(float(target_video_fps))))
+    else:
+        fps = int(1 / (cfg.vis_interval * cfg.dt))
     vis_snapshots_dir = os.path.join(out_dir, "vis_snapshots")
     async_vis = None
     cell_id_np_cache = None
@@ -573,10 +587,23 @@ def run_simulation(**kwargs):
         with open(vis_meta_path, "w", encoding="utf-8") as f:
             json.dump(vis_meta, f, indent=2)
         logger.info("Offline snapshots saved: %s", vis_snapshots_dir)
-        logger.info(
-            "Render later with: conda run -n lbm-sim python refactoredv2.7/render_animation_offline.py --snapshot-dir \"%s\"",
-            vis_snapshots_dir,
-        )
+        try:
+            from render_animation_offline import render_from_snapshot_dir
+
+            render_result = render_from_snapshot_dir(snapshot_dir=vis_snapshots_dir)
+            logger.info(
+                "Offline render completed: %s (%d frames @ %d fps)",
+                render_result["output_path"],
+                render_result["frames"],
+                render_result["fps"],
+            )
+            logger.info(f"Finished Benchmark: {benchmark}. Saved as {cfg.filename}")
+        except Exception as render_err:
+            logger.error("Offline render failed: %s", render_err)
+            logger.info(
+                "You can rerun manually: conda run -n lbm-sim python refactoredv2.7/render_animation_offline.py --snapshot-dir \"%s\"",
+                vis_snapshots_dir,
+            )
     else:
         logger.info(f"Finished Benchmark: {benchmark}. Animation export skipped by mode=none")
 

@@ -17,9 +17,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    snapshot_dir = os.path.abspath(args.snapshot_dir)
+def render_from_snapshot_dir(snapshot_dir, output=None, fps=None):
+    """vis_snapshots から動画を再生成し、出力パス等を返す。"""
+    snapshot_dir = os.path.abspath(snapshot_dir)
     meta_path = os.path.join(snapshot_dir, "render_meta.json")
     cell_id_path = os.path.join(snapshot_dir, "cell_id.npy")
     if not os.path.isfile(meta_path):
@@ -29,10 +29,10 @@ def main():
 
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
-    output_path = args.output or meta.get("filename")
+    output_path = output or meta.get("filename")
     if not output_path:
         raise ValueError("出力先を決定できません。--output を指定してください。")
-    fps = max(1, int(args.fps if args.fps is not None else meta.get("fps", 12)))
+    fps = max(1, int(fps if fps is not None else meta.get("fps", 12)))
 
     cell_id_np = np.load(cell_id_path)
     cfg = SimConfig(
@@ -57,7 +57,25 @@ def main():
         frames.append(frame)
 
     export_animation_frames(frames, output_path, fps=fps)
-    print(f"[SUCCESS] Animation rendered: {output_path} ({len(frames)} frames @ {fps} fps)")
+    return {
+        "output_path": output_path,
+        "frames": len(frames),
+        "fps": fps,
+        "snapshot_dir": snapshot_dir,
+    }
+
+
+def main():
+    args = parse_args()
+    result = render_from_snapshot_dir(
+        snapshot_dir=args.snapshot_dir,
+        output=args.output,
+        fps=args.fps,
+    )
+    print(
+        f"[SUCCESS] Animation rendered: {result['output_path']} "
+        f"({result['frames']} frames @ {result['fps']} fps)"
+    )
 
 
 if __name__ == "__main__":
