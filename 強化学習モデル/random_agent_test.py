@@ -1,6 +1,8 @@
 import numpy as np
 import time
 
+# python -m 強化学習モデル.random_agent_test
+
 # 作成したGymnasium環境をインポート（ファイル名を lbm_heatsink_env.py とした場合）
 from .lbm_heatsink_env import LBMHeatSinkEnv
 
@@ -20,9 +22,12 @@ def run_random_agent_test():
     
     # テストするステップ数（何回連続で削るか）
     # ※発散しやすいLBMで、20回も連続で形を変えてエラーなく走れば、システムはかなり安定しています
-    num_steps = 20 
+    num_steps = 20
     
     for step in range(num_steps):
+        if step == 0:
+            env.runner.save_state_vti("rl_state_initial.vti")
+            continue
         print(f"\n--- Step {step + 1}/{num_steps} ---")
         
         # 3. アクションのサンプリング
@@ -50,6 +55,9 @@ def run_random_agent_test():
         if terminated or truncated:
             print("Episode finished early (Terminated/Truncated).")
             break
+
+    # 6. ランダムに削った結果と、風の流れをすべてVTKに保存
+    env.runner.save_state_vti("rl_state.vti")
 
     print("\n=== Random Agent Test Completed ===")
 

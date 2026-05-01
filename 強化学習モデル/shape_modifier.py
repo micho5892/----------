@@ -15,26 +15,44 @@ class ShapeModifier:
     # 既存のgeometry.pyを触らないための「初期ブロック生成機能」
     # =========================================================
     def build_initial_block(self):
-        """強化学習用の初期形状（ブロック状の固体と、入口・出口）を構築"""
+        """トップフロー冷却用の初期形状を作成"""
         self._build_initial_block_kernel()
 
     @ti.kernel
     def _build_initial_block_kernel(self):
-        for i, j, k in ti.ndrange(self.ctx.nx, self.ctx.ny, self.ctx.nz):
-            # 1. 基本は全て固体とする
-            self.ctx.cell_id[i, j, k] = self.SOLID_ID
-            self.ctx.sdf[i, j, k] = -1.0 # マイナスは固体内を表す
-            self.ctx.phi[i, j, k] = 1.0  # 固体率100%
+        # ヒートシンクの配置範囲 (全体の 3/4 のサイズにする)
+        # 例: 両端 1/8 ずつを空ける
+        margin_x = self.ctx.nx // 8
+        margin_y = self.ctx.ny // 8
+        
+        # ヒートシンクの高さ (上部から風が来るので、上部は空間を空けておく)
+        height_z = int(self.ctx.nz * 0.6) 
 
-            # 2. ただし、Zの端は風洞の入口と出口にするため流体領域にする
+        for i, j, k in ti.ndrange(self.ctx.nx, self.ctx.ny, self.ctx.nz):
+            # --- 1. ヒートシンクブロックの判定 ---
+            is_inside_block = False
+            if (margin_x <= i < self.ctx.nx - margin_x) and \
+               (margin_y <= j < self.ctx.ny - margin_y) and \
+               (k <= height_z):
+                is_inside_block = True
+
+            if is_inside_block:
+                self.ctx.cell_id[i, j, k] = self.SOLID_ID
+                self.ctx.sdf[i, j, k] = -1.0
+                self.ctx.phi[i, j, k] = 1.0
+            else:
+                self.ctx.cell_id[i, j, k] = self.FLUID_ID
+                self.ctx.sdf[i, j, k] = 1.0
+                self.ctx.phi[i, j, k] = 0.0
+
+            # --- 2. 境界条件の上書き ---
+            # 天井 (真上) を INLET に
             if k == self.ctx.nz - 1:
                 self.ctx.cell_id[i, j, k] = self.INLET_ID
-                self.ctx.sdf[i, j, k] = 1.0
-                self.ctx.phi[i, j, k] = 0.0
-            elif k == 0:
+            
+            # 側面四方を OUTLET に (天井のINLETとは被らないように k < nz-1 とする)
+            elif (i == 0 or i == self.ctx.nx - 1 or j == 0 or j == self.ctx.ny - 1) and k < self.ctx.nz - 1:
                 self.ctx.cell_id[i, j, k] = self.OUTLET_ID
-                self.ctx.sdf[i, j, k] = 1.0
-                self.ctx.phi[i, j, k] = 0.0
 
     # =========================================================
     # 【案A用】 メタボール（球）による減算加工カーネル

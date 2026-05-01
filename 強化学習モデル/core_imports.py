@@ -14,6 +14,7 @@ _MODULE_FILES = {
     "geometry": "geometry.py",
     "solver": "solver.py",
     "analytics": "analytics.py",
+    "boundary": "boundary.py",
 }
 
 _REF_DIR = Path(__file__).resolve().parents[1] / "refactoredv2.7"
@@ -67,6 +68,7 @@ SimulationContext = _loaded_modules["context"].SimulationContext
 GeometryBuilder = _loaded_modules["geometry"].GeometryBuilder
 LBMSimulator = _loaded_modules["solver"].LBMSimulator
 Analytics = _loaded_modules["analytics"].Analytics
+BoundaryManager = _loaded_modules["boundary"].BoundaryManager
 
 __all__ = [
     "SimConfig",
@@ -74,4 +76,5 @@ __all__ = [
     "GeometryBuilder",
     "LBMSimulator",
     "Analytics",
+    "BoundaryManager",
 ]
