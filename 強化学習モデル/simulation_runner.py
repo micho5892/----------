@@ -321,3 +321,48 @@ class HeatSinkSimulationRunner:
         grid.save(filepath)
         print(f"RL state (Shape & Flow) saved to: {filepath}")
 
+    def backup_state(self):
+        """
+        現在のTaichiフィールドの状態をすべてNumPy配列としてメモリにコピー(バックアップ)する。
+        これにより、初期ウォームアップ状態を瞬時に復元できるようになる。
+        """
+        self._state_backup = {
+            "f_old": self.ctx.f_old.to_numpy(),
+            "f_new": self.ctx.f_new.to_numpy(),
+            "g_old": self.ctx.g_old.to_numpy(),
+            "g_new": self.ctx.g_new.to_numpy(),
+            "v": self.ctx.v.to_numpy(),
+            "temp": self.ctx.temp.to_numpy(),
+            "rho": self.ctx.rho.to_numpy(),
+            "sdf": self.ctx.sdf.to_numpy(),
+            "phi": self.ctx.phi.to_numpy(),
+            "cell_id": self.ctx.cell_id.to_numpy(),
+            "u_solid": self.ctx.u_solid.to_numpy(),
+            "F_int": self.ctx.F_int.to_numpy(),
+            "S_g": self.ctx.S_g.to_numpy(),
+            "current_time_p": self._current_time_p
+        }
+        print(f"[SimulationRunner] State backed up successfully. (Approx {sum(v.nbytes for v in self._state_backup.values() if isinstance(v, np.ndarray)) / 1024**2:.1f} MB)")
+
+    def restore_state(self):
+        """
+        メモリに保持しているバックアップ状態をTaichiフィールドに書き戻し、一瞬で状態を復元する。
+        """
+        if not hasattr(self, "_state_backup") or self._state_backup is None:
+            return False
+            
+        self.ctx.f_old.from_numpy(self._state_backup["f_old"])
+        self.ctx.f_new.from_numpy(self._state_backup["f_new"])
+        self.ctx.g_old.from_numpy(self._state_backup["g_old"])
+        self.ctx.g_new.from_numpy(self._state_backup["g_new"])
+        self.ctx.v.from_numpy(self._state_backup["v"])
+        self.ctx.temp.from_numpy(self._state_backup["temp"])
+        self.ctx.rho.from_numpy(self._state_backup["rho"])
+        self.ctx.sdf.from_numpy(self._state_backup["sdf"])
+        self.ctx.phi.from_numpy(self._state_backup["phi"])
+        self.ctx.cell_id.from_numpy(self._state_backup["cell_id"])
+        self.ctx.u_solid.from_numpy(self._state_backup["u_solid"])
+        self.ctx.F_int.from_numpy(self._state_backup["F_int"])
+        self.ctx.S_g.from_numpy(self._state_backup["S_g"])
+        self._current_time_p = self._state_backup["current_time_p"]
+        return True

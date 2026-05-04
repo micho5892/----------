@@ -49,14 +49,27 @@ class LBMHeatSinkEnv(gym.Env):
         super().reset(seed=seed)
         self.current_step = 0
         
-        # Runnerにシミュレーションのリセットとウォームアップを依頼
-        self.runner.reset_simulation(
-            warmup_steps=None,
-            warmup_time_sum_scale=self.warmup_time_sum_scale,
-        )
-        
-        # 初期状態のメトリクスを基準値として記録
-        self.base_nu, _ = self.runner.get_metrics()
+        # ====================================================
+        # ★修正: 最初の1回だけウォームアップしてバックアップを取る
+        # 2回目以降は、バックアップをリストアするだけで一瞬で初期状態に戻す
+        # ====================================================
+        if not hasattr(self, "_initial_state_backed_up"):
+            print("\n[LBMHeatSinkEnv] Performing initial warmup and state backup...")
+            self.runner.reset_simulation(
+                warmup_steps=1000, 
+                warmup_time_sum_scale=self.warmup_time_sum_scale,
+            )
+            # ウォームアップ済みの状態を保存
+            self.runner.backup_state()
+            
+            self.base_nu, _ = self.runner.get_metrics()
+            self._base_nu_backup = self.base_nu
+            self._initial_state_backed_up = True
+        else:
+            # 2回目以降は、LBMシミュレータを一瞬で初期状態に巻き戻す
+            self.runner.restore_state()
+            self.base_nu = self._base_nu_backup
+            
         info = {}
         if self.runner.last_reset_warmup_meta is not None:
             info["reset_warmup"] = dict(self.runner.last_reset_warmup_meta)

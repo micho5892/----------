@@ -10,6 +10,8 @@ import numpy as np
 from .lbm_heatsink_env import LBMHeatSinkEnv
 from .rl_run_optimize_config import RLParameterOptimizer
 
+# python -m 強化学習モデル.random_agent_test
+
 def run_random_agent_test(
     nx: int = 128,
     ny: int = 128,
