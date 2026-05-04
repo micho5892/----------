@@ -1,70 +1,43 @@
+# ==========================================================
+# random_agent_test.py
+# ==========================================================
 import argparse
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
-# python -m 強化学習モデル.random_agent_test
-
-_LBM_UI = Path(__file__).resolve().parents[1] / "lbm_ui_designer"
-if str(_LBM_UI) not in sys.path:
-    sys.path.insert(0, str(_LBM_UI))
-
-from lbm_param_optimize import run_optimize  # type: ignore[import-not-found]
-
 from .lbm_heatsink_env import LBMHeatSinkEnv
-from .rl_run_optimize_config import build_rl_heatsink_optimize_config
-
-
-def primary_to_sim_overrides(primary: dict) -> dict:
-    """run_optimize の primary を SimConfig 用に変換（入口 LBM 速度・代表物理流速・流体物性）。"""
-    u_lbm = float(primary["u_lbm"])
-    nu = float(primary["nu"])
-    kf = float(primary["k_f"])
-    rho_f = float(primary["rho_f"])
-    cp_f = float(primary["Cp_f"])
-    L_dom = float(primary["L_domain"])
-    U_p = float(primary["U"])
-    fluid_dp = {"nu": nu, "k": kf, "rho": rho_f, "Cp": cp_f}
-    return {
-        "Lx_p": L_dom,
-        "U_inlet_p": U_p,
-        "boundary_conditions": {
-            20: {
-                "type": "inlet",
-                "velocity": [0.0, 0.0, -u_lbm],
-                "temperature": 0.0,
-            },
-        },
-        "domain_properties": {
-            0: fluid_dp,
-            20: fluid_dp,
-            21: fluid_dp,
-        },
-    }
-
+from .rl_run_optimize_config import RLParameterOptimizer
 
 def run_random_agent_test(
-    nx: int = 64,
-    ny: int = 64,
-    nz: int = 128,
-    warmup_time_sum_scale: float = 3.0,
+    nx: int = 128,
+    ny: int = 128,
+    nz: int = 256,
+    U_inlet_p: float = 0.05,
+    warmup_time_sum_scale: float = 0.1,
 ):
     print("=== Starting Random Agent Test (Plan A: Sphere Subtraction) ===")
 
-    opt_cfg = build_rl_heatsink_optimize_config(nx, L_domain=0.1)
-    print("run_optimize を実行中（reset 前に入口 u_lbm 等を決定）…")
-    opt_out = run_optimize(opt_cfg)
-    if not opt_out.get("success"):
-        print(f"警告: run_optimize success=False — {opt_out.get('message')}")
-    primary = opt_out["primary"]
-    print(
-        f"  最適化後 primary: u_lbm={primary['u_lbm']:.6f}, "
-        f"U={primary['U']:.6f}, L_ref={primary['L_ref']:.6f} m"
+    # 1. パラメータ最適化エンジン（部品）の初期化と実行
+    # 今後、流体を "Water" にしたり、Reの範囲を変えたりする場合はここで kwargs で渡すだけです
+    optimizer = RLParameterOptimizer(
+        nx=nx,
+        U_inlet_p=U_inlet_p,
+        L_domain=0.1,
+        fluid="Air",
     )
+    
+    print("run_optimize を実行中（reset 前に入口 u_lbm 等を決定）…")
+    success = optimizer.run(verbose=True)
+    if not success:
+        print("警告: 最適化に失敗しました。パラメータ範囲などを確認してください。")
+        # 失敗しても続行することはできますが、物理的に無理な状態になる可能性があります
 
-    overrides = primary_to_sim_overrides(primary)
+    # 最適化結果からシミュレータ用のオーバーライド辞書を取得
+    overrides = optimizer.get_sim_overrides()
+
+    # 2. 強化学習環境の構築
     env = LBMHeatSinkEnv(
         mode="plan_a",
         nx=nx,
@@ -74,11 +47,15 @@ def run_random_agent_test(
         warmup_time_sum_scale=warmup_time_sum_scale,
     )
 
-    print("Resetting environment... (ウォームアップは基準時間から自動算出)")
+    # 3. 環境のリセット
+    # ここで Runner.compute_warmup_steps_from_characteristic_times が走り、
+    # 物理法則に基づいた最適なウォームアップステップ数が自動算出され実行されます。
+    print("\nResetting environment... (ウォームアップは基準時間から自動算出)")
     start_time = time.time()
     obs, info = env.reset()
     print(f"Reset completed in {time.time() - start_time:.2f} seconds.")
     print(f"Initial Observation Shape (C, X, Y, Z): {obs.shape}")
+    
     meta = info.get("reset_warmup")
     if meta is not None:
         print(
@@ -87,12 +64,13 @@ def run_random_agent_test(
             f"t_adv={meta['t_adv_s']}, t_th={meta['t_th_s']}, dt={meta['dt']}"
         )
 
+    # 4. ランダムアクションによるステップ実行テスト
     num_steps = 20
 
     for step in range(num_steps):
         if step == 0:
             env.runner.save_state_vti("rl_state_initial.vti")
-            continue
+            
         print(f"\n--- Step {step + 1}/{num_steps} ---")
 
         action = env.action_space.sample()
@@ -119,8 +97,8 @@ def run_random_agent_test(
             print("Episode finished early (Terminated/Truncated).")
             break
 
-    env.runner.save_state_vti("rl_state.vti")
-
+    # テスト終了後に最終状態を VTI として保存
+    env.runner.save_state_vti("rl_state_final.vti")
     print("\n=== Random Agent Test Completed ===")
 
 
@@ -129,6 +107,7 @@ def _parse_args():
     p.add_argument("--nx", type=int, default=64)
     p.add_argument("--ny", type=int, default=64)
     p.add_argument("--nz", type=int, default=128)
+    p.add_argument("--U-inlet-p", type=float, default=0.1, help="物理的な入口流速 [m/s]")
     p.add_argument(
         "--warmup-time-sum-scale",
         type=float,
@@ -144,5 +123,6 @@ if __name__ == "__main__":
         nx=args.nx,
         ny=args.ny,
         nz=args.nz,
+        U_inlet_p=args.U_inlet_p,
         warmup_time_sum_scale=args.warmup_time_sum_scale,
     )

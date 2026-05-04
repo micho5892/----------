@@ -221,6 +221,7 @@ class HeatSinkSimulationRunner:
         else:
             self.last_reset_warmup_meta = None
         self.sim.init_fields(self.ctx)
+        print(f"Warmup steps: {warmup_steps}")
         self.run_steps(int(warmup_steps))
 
     def modify_shape_sphere(self, cx, cy, cz, radius):
