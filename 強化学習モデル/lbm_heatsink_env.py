@@ -9,12 +9,27 @@ class LBMHeatSinkEnv(gym.Env):
     """
     共役熱伝達LBMシミュレータを用いたヒートシンク最適化環境
     """
-    def __init__(self, mode="plan_a"):
+    def __init__(
+        self,
+        mode="plan_a",
+        nx: int = 64,
+        ny: int = 64,
+        nz: int = 128,
+        sim_config_overrides: dict | None = None,
+        warmup_time_sum_scale: float = 3.0,
+    ):
         super().__init__()
         self.mode = mode
+        self.warmup_time_sum_scale = float(warmup_time_sum_scale)
         
         # シミュレーション実行クラスのインスタンス化
-        self.runner = HeatSinkSimulationRunner(nx=64, ny=64, nz=128, mode=self.mode)
+        self.runner = HeatSinkSimulationRunner(
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            mode=self.mode,
+            sim_config_overrides=sim_config_overrides,
+        )
         
         # 行動空間 (Action Space)
         if self.mode == "plan_a":
@@ -35,12 +50,17 @@ class LBMHeatSinkEnv(gym.Env):
         self.current_step = 0
         
         # Runnerにシミュレーションのリセットとウォームアップを依頼
-        self.runner.reset_simulation(warmup_steps=10000)
+        self.runner.reset_simulation(
+            warmup_steps=None,
+            warmup_time_sum_scale=self.warmup_time_sum_scale,
+        )
         
         # 初期状態のメトリクスを基準値として記録
         self.base_nu, _ = self.runner.get_metrics()
-        
-        return self.runner.get_observation_arrays(), {}
+        info = {}
+        if self.runner.last_reset_warmup_meta is not None:
+            info["reset_warmup"] = dict(self.runner.last_reset_warmup_meta)
+        return self.runner.get_observation_arrays(), info
 
     def step(self, action):
         self.current_step += 1
