@@ -177,7 +177,9 @@ class LBMSimulator:
                         Pi_xx * Q_xx + Pi_yy * Q_yy + Pi_zz * Q_zz +
                         2.0 * (Pi_xy * Q_xy + Pi_yz * Q_yz + Pi_zx * Q_zx)
                     )
-                    
+
+                    f_neq_reg += -1.5 * w * (1.0 - omega_f) * (ex * F_vec[0] + ey * F_vec[1] + ez * F_vec[2])
+                                        
                     e_vec = ti.Vector([ex, ey, ez])
                     e_minus_v = e_vec - v_vec
                     e_dot_v = e_vec.dot(v_vec)
