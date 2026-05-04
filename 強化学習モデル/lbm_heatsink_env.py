@@ -56,7 +56,7 @@ class LBMHeatSinkEnv(gym.Env):
         if not hasattr(self, "_initial_state_backed_up"):
             print("\n[LBMHeatSinkEnv] Performing initial warmup and state backup...")
             self.runner.reset_simulation(
-                warmup_steps=1000, 
+                # warmup_steps=1000, 
                 warmup_time_sum_scale=self.warmup_time_sum_scale,
             )
             # ウォームアップ済みの状態を保存
@@ -78,42 +78,52 @@ class LBMHeatSinkEnv(gym.Env):
     def step(self, action):
         self.current_step += 1
         
-        # 1. 行動をシミュレーション座標に変換し、Runnerに形状変更を指示
         if self.mode == "plan_a":
             cx = (action[0] + 1.0) * 0.5 * self.runner.cfg.nx
             cy = (action[1] + 1.0) * 0.5 * self.runner.cfg.ny
             cz = (action[2] + 1.0) * 0.5 * self.runner.cfg.nz
-            r  = ((action[3] + 1.0) * 0.5 * 10.0) + 2.0  # 半径2〜12セル
+            # 半径は繊細な加工ができるように 2.0 〜 12.0 に戻す
+            r  = ((action[3] + 1.0) * 0.5 * 10.0) + 2.0  
             
+            # ====================================================
+            # ★追加: ユーザー提案の「空振り（無効アクション）判定」
+            # ====================================================
+            # 指定された中心座標のインデックスを取得
+            ix = int(np.clip(cx, 0, self.runner.cfg.nx - 1))
+            iy = int(np.clip(cy, 0, self.runner.cfg.ny - 1))
+            iz = int(np.clip(cz, 0, self.runner.cfg.nz - 1))
+            
+            # その座標のSDF（ブロック表面からの距離）を取得
+            current_sdf = self.runner.ctx.sdf.to_numpy()[ix, iy, iz]
+            
+            # もし「ブロック表面からの距離」が「削る半径-1」より遠ければ、完全に空振り
+            if current_sdf > r - 1.0:
+                # LBMの重い計算を「スキップ」して、即座に強いペナルティを与える！
+                reward = -2.0  # 空振りペナルティ
+                terminated = False
+                truncated = (self.current_step >= self.max_steps)
+                info = {"nu_number": 0.0, "pressure_drop": 0.0, "missed": True}
+                
+                # 状態は一切変わっていないので、そのまま返す
+                return self.runner.get_observation_arrays(), reward, terminated, truncated, info
+
+            # 空振りでなければ、実際に形を削る
             self.runner.modify_shape_sphere(cx, cy, cz, r)
 
-        # 2. シミュレーションを進める
+        # 2. シミュレーションを進める（本当に削った時だけLBM計算が走る）
         self.runner.run_steps(num_steps=200)
 
         # 3. 評価指標を取得し、報酬を計算
-        current_nu, pressure_drop = self.runner.get_metrics()
+        current_nu, current_pressure_drop = self.runner.get_metrics()
         
-        # --- 報酬のチューニング ---
-        # 1. Nu数の変化 (削ると基本的に減るので、ペナルティを少しマイルドにする)
         nu_reward = (current_nu - self.base_nu) * 1.0  
+        pressure_improvement = (self.base_pressure_drop - current_pressure_drop) * 100.0 
         
-        # 2. 圧力損失の改善 (初期状態の詰まったブロックからどれだけ風通しを良くしたか)
-        # 初期状態の圧力損失を base_pressure_drop として __init__ または reset で取っておき、
-        # (self.base_pressure_drop - pressure_drop) * 1000.0 のようにすると
-        # 「風を通したこと」への強いプラス報酬を与えられます。
+        raw_reward = nu_reward + pressure_improvement
+        reward = float(raw_reward / 100.0)
         
-        # 今回は簡易的に「圧力損失そのものが小さいほど良い」とするため、係数を大きくします
-        pressure_penalty = pressure_drop * 100.0 
-        
-        # 生の報酬
-        raw_reward = nu_reward - pressure_penalty
-        
-        # ★重要: NNが学習しやすいように報酬全体を小さくスケーリング（100分の1など）
-        reward = raw_reward / 100.0
-        
-        # 4. 終了判定
         terminated = False
         truncated = (self.current_step >= self.max_steps)
             
-        info = {"nu_number": current_nu, "pressure_drop": pressure_drop}
+        info = {"nu_number": current_nu, "pressure_drop": current_pressure_drop, "missed": False}
         return self.runner.get_observation_arrays(), reward, terminated, truncated, info
