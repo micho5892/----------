@@ -15,7 +15,7 @@ def run_random_agent_test(
     ny: int = 128,
     nz: int = 256,
     U_inlet_p: float = 0.05,
-    warmup_time_sum_scale: float = 0.1,
+    warmup_time_sum_scale: float = 0.01,
 ):
     print("=== Starting Random Agent Test (Plan A: Sphere Subtraction) ===")
 
@@ -111,7 +111,7 @@ def _parse_args():
     p.add_argument(
         "--warmup-time-sum-scale",
         type=float,
-        default=3.0,
+        default=0.01,
         help="(t_adv + t_th) に掛ける倍率（既定 3）",
     )
     return p.parse_args()

@@ -78,6 +78,11 @@ class ShapeModifier:
                 
                 # SDFがプラス（流体領域）になったら物理プロパティを更新
                 if new_sdf > 0.0:
-                    self.ctx.cell_id[i, j, k] = self.FLUID_ID
+                    # ===============================================
+                    # ★修正: INLETやOUTLETを壊さないよう、SOLIDの時だけFLUIDに変える
+                    # ===============================================
+                    if self.ctx.cell_id[i, j, k] == self.SOLID_ID:
+                        self.ctx.cell_id[i, j, k] = self.FLUID_ID
+                        
                     self.ctx.phi[i, j, k] = 0.0
                     self.ctx.u_solid[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
