@@ -87,7 +87,7 @@ def train_agent(
         mode="plan_a",
         nx=nx, ny=ny, nz=nz,
         sim_config_overrides=overrides,
-        warmup_time_sum_scale=0.01,
+        warmup_time_sum_scale=0.1,
     )
 
     # 3. PPOモデルの構築

@@ -93,8 +93,23 @@ class LBMHeatSinkEnv(gym.Env):
         # 3. 評価指標を取得し、報酬を計算
         current_nu, pressure_drop = self.runner.get_metrics()
         
-        # 報酬設計 (※重みは学習を見ながら調整します)
-        reward = (current_nu - self.base_nu) * 10.0 - (pressure_drop * 0.1)
+        # --- 報酬のチューニング ---
+        # 1. Nu数の変化 (削ると基本的に減るので、ペナルティを少しマイルドにする)
+        nu_reward = (current_nu - self.base_nu) * 1.0  
+        
+        # 2. 圧力損失の改善 (初期状態の詰まったブロックからどれだけ風通しを良くしたか)
+        # 初期状態の圧力損失を base_pressure_drop として __init__ または reset で取っておき、
+        # (self.base_pressure_drop - pressure_drop) * 1000.0 のようにすると
+        # 「風を通したこと」への強いプラス報酬を与えられます。
+        
+        # 今回は簡易的に「圧力損失そのものが小さいほど良い」とするため、係数を大きくします
+        pressure_penalty = pressure_drop * 100.0 
+        
+        # 生の報酬
+        raw_reward = nu_reward - pressure_penalty
+        
+        # ★重要: NNが学習しやすいように報酬全体を小さくスケーリング（100分の1など）
+        reward = raw_reward / 100.0
         
         # 4. 終了判定
         terminated = False
