@@ -33,7 +33,19 @@ class LBMHeatSinkEnv(gym.Env):
         
         # 行動空間 (Action Space)
         if self.mode == "plan_a":
+            # [X, Y, Z, R]
             self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
+        elif self.mode == "plan_b":
+            # ====================================================
+            # ★追加: 案Bの行動空間
+            # 空間全体の各ボクセルに対する「削る度合い」
+            # (-1.0: 完全に残す[固体] 〜 1.0: 完全に削る[流体])
+            # ====================================================
+            self.action_space = spaces.Box(
+                low=-1.0, high=1.0, 
+                shape=(self.runner.cfg.nx, self.runner.cfg.ny, self.runner.cfg.nz), 
+                dtype=np.float32
+            )
 
         # 観測空間 (Observation Space)
         self.observation_space = spaces.Box(
@@ -99,6 +111,18 @@ class LBMHeatSinkEnv(gym.Env):
                 return self.runner.get_observation_arrays(), reward, terminated, truncated, info
 
             self.runner.modify_shape_sphere(cx, cy, cz, r)
+
+        elif self.mode == "plan_b":
+            # ====================================================
+            # ★追加: 案Bのアクション適用
+            # action: [-1.0, 1.0] 
+            # -1.0 が「削らない(固体)」、1.0 が「完全に削る(流体)」
+            # Taichiの phi は 1.0が固体, 0.0が流体なので反転スケール変換する
+            # ====================================================
+            target_phi = 0.5 * (1.0 - action)
+            
+            # 形状の一括更新（空振りという概念はないため即実行）
+            self.runner.modify_shape_density(target_phi)
 
         self.runner.run_steps(num_steps=200)
 

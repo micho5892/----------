@@ -74,3 +74,40 @@ class ShapeModifier:
                         self.ctx.cell_id[i, j, k] = self.FLUID_ID
                         self.ctx.phi[i, j, k] = 0.0
                         self.ctx.u_solid[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+
+
+    def update_from_density_tensor(self, density_np):
+        """
+        AIが出力した 0.0(流体)〜1.0(固体) の密度テンソルを受け取り、phi と sdf を一括更新する。
+        """
+        # TaichiフィールドにNumPy配列を転送するための受け皿を作成
+        if not hasattr(self, "density_field"):
+            self.density_field = ti.field(dtype=self.cfg.fp_dtype, shape=(self.ctx.nx, self.ctx.ny, self.ctx.nz))
+        
+        self.density_field.from_numpy(density_np)
+        self._update_from_density_kernel()
+
+    @ti.kernel
+    def _update_from_density_kernel(self):
+        protected_z = 5.0  
+        for i, j, k in ti.ndrange(self.ctx.nx, self.ctx.ny, self.ctx.nz):
+            cid = self.ctx.cell_id[i, j, k]
+            
+            # 熱源ベースプレートや、入口・出口境界は絶対に改変しない
+            if float(k) > protected_z and cid != self.INLET_ID and cid != self.OUTLET_ID and cid != self.SOLID_HEAT_SOURCE_ID:
+                
+                # ターゲットの固体率 (0.0: 流体, 1.0: 固体)
+                d_val = self.density_field[i, j, k]
+                
+                # 密度法のように、中間状態（半透明のスポンジ状態）を許容する
+                self.ctx.phi[i, j, k] = d_val
+                
+                # セルIDとSDFは、計算の安定のため閾値(0.5)で二値化して判定
+                if d_val < 0.5:
+                    self.ctx.cell_id[i, j, k] = self.FLUID_ID
+                    self.ctx.sdf[i, j, k] = 1.0   # 簡易的に流体側(プラス)とする
+                    self.ctx.u_solid[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+                else:
+                    self.ctx.cell_id[i, j, k] = self.SOLID_ID
+                    self.ctx.sdf[i, j, k] = -1.0  # 簡易的に固体側(マイナス)とする
+

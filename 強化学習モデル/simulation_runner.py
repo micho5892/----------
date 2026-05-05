@@ -229,6 +229,10 @@ class HeatSinkSimulationRunner:
         """案A: 指定した球の範囲を削る"""
         self.modifier.subtract_sphere(cx, cy, cz, radius)
 
+    def modify_shape_density(self, density_array):
+        """案B: 空間全体の密度(固体率)テンソルで形状を更新する"""
+        self.modifier.update_from_density_tensor(density_array)
+
     def run_steps(self, num_steps):
         """指定回数だけLBMのステップを進める（main.py のループと同じ順序・ランプ）"""
         for _ in range(num_steps):

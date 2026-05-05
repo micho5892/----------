@@ -18,6 +18,7 @@ def run_random_agent_test(
     nz: int = 256,
     U_inlet_p: float = 0.05,
     warmup_time_sum_scale: float = 0.01,
+    mode: str = "plan_a",
 ):
     print("=== Starting Random Agent Test (Plan A: Sphere Subtraction) ===")
 
@@ -41,7 +42,7 @@ def run_random_agent_test(
 
     # 2. 強化学習環境の構築
     env = LBMHeatSinkEnv(
-        mode="plan_a",
+        mode=mode,
         nx=nx,
         ny=ny,
         nz=nz,
@@ -77,11 +78,11 @@ def run_random_agent_test(
 
         action = env.action_space.sample()
 
-        print("Sampled Action (Normalized):")
-        print(
-            f"  X: {action[0]:.3f}, Y: {action[1]:.3f}, "
-            f"Z: {action[2]:.3f}, Radius: {action[3]:.3f}"
-        )
+        print("Sampled Action:")
+        if mode == "plan_a":
+            print(f"  X: {action[0]:.3f}, Y: {action[1]:.3f}, Z: {action[2]:.3f}, Radius: {action[3]:.3f}")
+        elif mode == "plan_b":
+            print(f"  Dense Tensor generated, shape: {action.shape}, mean: {action.mean():.3f}")
 
         step_start = time.time()
         obs, reward, terminated, truncated, info = env.step(action)
@@ -116,6 +117,7 @@ def _parse_args():
         default=0.01,
         help="(t_adv + t_th) に掛ける倍率（既定 3）",
     )
+    p.add_argument("--mode", type=str, default="plan_a", choices=["plan_a", "plan_b"])
     return p.parse_args()
 
 
