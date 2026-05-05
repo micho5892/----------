@@ -19,8 +19,11 @@ def run_random_agent_test(
     U_inlet_p: float = 0.05,
     warmup_time_sum_scale: float = 0.01,
     mode: str = "plan_a",
+    plan_b_downscale: int = 4,
 ):
-    print("=== Starting Random Agent Test (Plan A: Sphere Subtraction) ===")
+    print(f"=== Starting Random Agent Test (Mode: {mode}) ===")
+    if mode == "plan_b":
+        print(f"  Downscale Factor: {plan_b_downscale}x")
 
     # 1. パラメータ最適化エンジン（部品）の初期化と実行
     # 今後、流体を "Water" にしたり、Reの範囲を変えたりする場合はここで kwargs で渡すだけです
@@ -48,6 +51,7 @@ def run_random_agent_test(
         nz=nz,
         sim_config_overrides=overrides,
         warmup_time_sum_scale=warmup_time_sum_scale,
+        plan_b_downscale=plan_b_downscale,
     )
 
     # 3. 環境のリセット
@@ -82,7 +86,7 @@ def run_random_agent_test(
         if mode == "plan_a":
             print(f"  X: {action[0]:.3f}, Y: {action[1]:.3f}, Z: {action[2]:.3f}, Radius: {action[3]:.3f}")
         elif mode == "plan_b":
-            print(f"  Dense Tensor generated, shape: {action.shape}, mean: {action.mean():.3f}")
+            print(f"  Dense Tensor shape: {action.shape}, mean: {action.mean():.3f}")
 
         step_start = time.time()
         obs, reward, terminated, truncated, info = env.step(action)
@@ -118,6 +122,12 @@ def _parse_args():
         help="(t_adv + t_th) に掛ける倍率（既定 3）",
     )
     p.add_argument("--mode", type=str, default="plan_a", choices=["plan_a", "plan_b"])
+    p.add_argument(
+        "--downscale",
+        type=int,
+        default=4,
+        help="案Bのダウンスケール率（1で等倍出力、8でさらに低解像度）",
+    )
     return p.parse_args()
 
 
@@ -129,4 +139,6 @@ if __name__ == "__main__":
         nz=args.nz,
         U_inlet_p=args.U_inlet_p,
         warmup_time_sum_scale=args.warmup_time_sum_scale,
+        mode=args.mode,
+        plan_b_downscale=args.downscale,
     )

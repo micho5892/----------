@@ -1,6 +1,7 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import scipy.ndimage
 
 # 新しく作ったRunnerをインポート
 from .simulation_runner import HeatSinkSimulationRunner
@@ -17,10 +18,12 @@ class LBMHeatSinkEnv(gym.Env):
         nz: int = 128,
         sim_config_overrides: dict | None = None,
         warmup_time_sum_scale: float = 3.0,
+        plan_b_downscale: int = 4,
     ):
         super().__init__()
         self.mode = mode
         self.warmup_time_sum_scale = float(warmup_time_sum_scale)
+        self.plan_b_downscale = max(1, int(plan_b_downscale))
         
         # シミュレーション実行クラスのインスタンス化
         self.runner = HeatSinkSimulationRunner(
@@ -37,13 +40,16 @@ class LBMHeatSinkEnv(gym.Env):
             self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         elif self.mode == "plan_b":
             # ====================================================
-            # ★追加: 案Bの行動空間
-            # 空間全体の各ボクセルに対する「削る度合い」
-            # (-1.0: 完全に残す[固体] 〜 1.0: 完全に削る[流体])
+            # ★修正: 指定ダウンスケール率で案Bの行動空間を定義
             # ====================================================
+            self.action_shape = (
+                max(1, self.runner.cfg.nx // self.plan_b_downscale),
+                max(1, self.runner.cfg.ny // self.plan_b_downscale),
+                max(1, self.runner.cfg.nz // self.plan_b_downscale),
+            )
             self.action_space = spaces.Box(
-                low=-1.0, high=1.0, 
-                shape=(self.runner.cfg.nx, self.runner.cfg.ny, self.runner.cfg.nz), 
+                low=-1.0, high=1.0,
+                shape=self.action_shape,
                 dtype=np.float32
             )
 
@@ -114,15 +120,37 @@ class LBMHeatSinkEnv(gym.Env):
 
         elif self.mode == "plan_b":
             # ====================================================
-            # ★追加: 案Bのアクション適用
-            # action: [-1.0, 1.0] 
-            # -1.0 が「削らない(固体)」、1.0 が「完全に削る(流体)」
-            # Taichiの phi は 1.0が固体, 0.0が流体なので反転スケール変換する
+            # ★修正: ダウンスケール率に応じたアップサンプリング
             # ====================================================
-            target_phi = 0.5 * (1.0 - action)
-            
-            # 形状の一括更新（空振りという概念はないため即実行）
-            self.runner.modify_shape_density(target_phi)
+            action_3d = action.reshape(self.action_shape)
+            target_phi_low_res = 0.5 * (1.0 - action_3d)
+
+            if self.plan_b_downscale == 1:
+                target_phi_high_res = target_phi_low_res
+            else:
+                scale_factors = (
+                    self.runner.cfg.nx / self.action_shape[0],
+                    self.runner.cfg.ny / self.action_shape[1],
+                    self.runner.cfg.nz / self.action_shape[2],
+                )
+                target_phi_high_res = scipy.ndimage.zoom(
+                    target_phi_low_res, scale_factors, order=3
+                )
+                target_phi_high_res = np.clip(target_phi_high_res, 0.0, 1.0)
+
+                req_shape = (self.runner.cfg.nx, self.runner.cfg.ny, self.runner.cfg.nz)
+                if target_phi_high_res.shape != req_shape:
+                    temp = np.zeros(req_shape, dtype=np.float32)
+                    cx = min(req_shape[0], target_phi_high_res.shape[0])
+                    cy = min(req_shape[1], target_phi_high_res.shape[1])
+                    cz = min(req_shape[2], target_phi_high_res.shape[2])
+                    temp[:cx, :cy, :cz] = target_phi_high_res[:cx, :cy, :cz]
+                    target_phi_high_res = temp
+
+            target_phi_high_res = np.asarray(
+                np.clip(target_phi_high_res, 0.0, 1.0), dtype=np.float32
+            )
+            self.runner.modify_shape_density(target_phi_high_res)
 
         self.runner.run_steps(num_steps=200)
 
