@@ -16,7 +16,8 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from .rl_run_optimize_config import RLParameterOptimizer
 from .lbm_heatsink_env import LBMHeatSinkEnv
 
-# python -m 強化学習モデル.train_agent
+# python -m 強化学習モデル.train_agent --timesteps 20000
+# tensorboard --logdir logs/heatsink_tb
 
 # ==========================================================
 # カスタム 3D-CNN フィーチャーエクストラクタ
