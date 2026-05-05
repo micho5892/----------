@@ -367,6 +367,8 @@ def run_simulation(**kwargs):
     step = 0
     current_time_p = 0.0
     start_wall_time = time.time()
+    eta_ref_wall_time = None
+    eta_ref_time_p = None
 
     while current_time_p < max_time_p:
         if ramp_time_p > 0.0 and current_time_p < ramp_time_p:
@@ -456,14 +458,21 @@ def run_simulation(**kwargs):
             else:
                 status_str = "[MaxTime]"
 
-            elapsed_wall = time.time() - start_wall_time
             target_time_p = max_time_p
             if global_steady_time_p is not None:
                 target_time_p = min(max_time_p, global_steady_time_p + steady_extra_p)
 
             rem_time_p = target_time_p - current_time_p
-            eta_sec = (elapsed_wall / (current_time_p + 1e-12)) * rem_time_p
-            eta_str = format_eta(eta_sec)
+            if eta_ref_wall_time is None or eta_ref_time_p is None:
+                # 1周目（初回ログ）は初期化コストで重くなりやすいため ETA の統計から除外
+                eta_ref_wall_time = time.time()
+                eta_ref_time_p = current_time_p
+                eta_str = "Calculating..."
+            else:
+                elapsed_wall = time.time() - eta_ref_wall_time
+                elapsed_time_p = current_time_p - eta_ref_time_p
+                eta_sec = (elapsed_wall / max(elapsed_time_p, 1e-12)) * rem_time_p
+                eta_str = format_eta(eta_sec)
 
             # ==========================================================
             # ★追加：カルマン渦検証用のポイントプローブ (時系列データの保存)
