@@ -760,6 +760,40 @@ class GeometryBuilder:
         """[ベンチマーク用] 差温キャビティ (自然対流と浮力の検証)"""
         self._build_thermal_cavity_kernel(ctx.cell_id, ctx.sdf, ctx.nx, ctx.ny, ctx.nz)
 
+    @staticmethod
+    @ti.kernel
+    def _build_rl_heatsink_kernel(
+        cell_id: ti.template(),
+        sdf: ti.template(),
+        phi: ti.template(),
+        nx: int,
+        ny: int,
+        nz: int,
+    ):
+        """強化学習モデル/shape_modifier.py の build_initial_block と同一ロジック。"""
+        margin_x = nx // 8
+        margin_y = ny // 8
+        height_z = int(nz * 0.6)
+        for i, j, k in cell_id:
+            is_inside_block = False
+            if margin_x <= i < nx - margin_x and margin_y <= j < ny - margin_y and k <= height_z:
+                is_inside_block = True
+            if is_inside_block:
+                cell_id[i, j, k] = SOLID
+                sdf[i, j, k] = -1.0
+                phi[i, j, k] = 1.0
+            else:
+                cell_id[i, j, k] = FLUID_A
+                sdf[i, j, k] = 1.0
+                phi[i, j, k] = 0.0
+            if k == nz - 1:
+                cell_id[i, j, k] = INLET
+            elif (i == 0 or i == nx - 1 or j == 0 or j == ny - 1) and k < nz - 1:
+                cell_id[i, j, k] = OUTLET
+
+    def build_rl_heatsink(self, ctx):
+        """[RL] ヒートシンク初期ブロック + 上端入口・側面出口（Z 上が入口）。"""
+        self._build_rl_heatsink_kernel(ctx.cell_id, ctx.sdf, ctx.phi, ctx.nx, ctx.ny, ctx.nz)
 
     def build_empty_domain(self, ctx):
         """[AI・IBM検証用] 障害物のない空の空間（境界条件や周期境界用）"""
