@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import taichi as ti
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -27,6 +27,12 @@ class RenderConfig(BaseModel):
     output_format: Literal["gif", "mp4"] = Field("gif", description="出力フォーマット")
     vti_export_interval: int = Field(0, ge=0, description="VTI出力間隔(0で無効)")
     vti_path_template: str = Field("results/step_{:06d}.vti")
+
+    @field_validator("output_format", mode="before")
+    @classmethod
+    def _norm_output_format(cls, v: Any) -> str:
+        s = str(v).lower().strip()
+        return s if s in ("gif", "mp4") else "gif"
 
 
 class ParticleConfig(BaseModel):
@@ -68,9 +74,10 @@ class SimConfig(BaseModel):
 
     steps: int = Field(600, ge=1)
 
-    boundary_conditions: Dict[str, Any] = Field(default_factory=dict)
-    physics_models: Dict[str, Any] = Field(default_factory=dict)
-    domain_properties: Dict[str, Any] = Field(default_factory=dict)
+    # キーはセル ID で int のことが多い（従来コード・ベンチスクリプト互換）。str も許容。
+    boundary_conditions: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    physics_models: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    domain_properties: Dict[Union[str, int], Any] = Field(default_factory=dict)
 
     U_inlet_p: float = Field(1.0, description="代表物理流速")
     u_lbm_inlet: float = Field(0.1, description="LBM単位での代表流速（inlet から自動上書き可）")
@@ -94,11 +101,62 @@ class SimConfig(BaseModel):
     rotation_axis: str = Field("z")
     rot_axis_id: int = Field(2, exclude=True)
 
-    out_dir: Optional[str] = Field(None, description="実行時に main から設定")
+    out_dir: Optional[str] = Field(
+        None,
+        description="未実行時は「明示出力ディレクトリ」または None（自動）。run_simulation 開始後は確定パスの絶対パスへ更新される",
+    )
     custom_physics_models: Optional[List[Any]] = Field(
         None,
         description="オプション: run_mpemba 等から注入する追加物理モデル",
     )
+
+    arch: Literal["gpu", "cpu"] = Field("gpu", description="Taichi の arch（ti.init）")
+
+    max_time_p: float = Field(10.0, gt=0, description="シミュレーションの最大実行時間（秒）")
+    ramp_time_p: float = Field(1.0, ge=0, description="立ち上げ時間（秒）。この間外力が徐々に立ち上がる")
+
+    steady_detection: bool = Field(True, description="定常状態を自動検知して早期終了するか")
+    steady_window_p: float = Field(1.0, gt=0, description="定常検知の判定ウィンドウ（秒）")
+    steady_tolerance: float = Field(0.001, gt=0, description="定常検知の許容誤差割合")
+    steady_extra_p: float = Field(2.0, ge=0, description="定常検知後の追加実行時間（秒）")
+
+    target_video_fps: Optional[float] = Field(None, description="出力動画の目標FPS（指定時は vis_interval を自動計算）")
+
+    visualization_mode: Literal["realtime", "offline", "none"] = Field(
+        "realtime",
+        description="可視化モード",
+    )
+    visualization_queue_size: int = Field(8, ge=1, description="非同期可視化のキューサイズ")
+    visualization_drop_policy: Literal["drop_oldest", "drop_newest"] = Field("drop_oldest")
+
+    data_export_interval: int = Field(0, ge=0, description="機械学習用データの保存間隔ステップ（0で無効）")
+    data_export_start_p: float = Field(5.0, ge=0, description="データ保存を開始する物理時間（秒）")
+
+    state: Dict[str, Any] = Field(default_factory=dict, description="状態維持用の辞書")
+    artifact_parent: Optional[str] = Field(None, description="結果を出力する親ディレクトリ（run_subdir 配下を作成）")
+    paths_out: Optional[Dict[str, Any]] = Field(None, description="パス結果を呼び出し元に返すミュータブル辞書")
+    vti_dir: Optional[str] = Field(None, description="明示的な VTI 出力ディレクトリ（未指定時は <out>/vti）")
+
+    flow_type: str = Field("counter", description="熱交換器などでの向き（例: counter / co-current）。geometry が参照する場合用")
+
+    @field_validator("target_video_fps", mode="before")
+    @classmethod
+    def _norm_target_fps(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        return float(v)
+
+    @field_validator("visualization_mode", mode="before")
+    @classmethod
+    def _norm_visualization_mode(cls, v: Any) -> str:
+        s = str(v).lower().strip()
+        return s if s in ("realtime", "offline", "none") else "realtime"
+
+    @field_validator("visualization_drop_policy", mode="before")
+    @classmethod
+    def _norm_drop_policy(cls, v: Any) -> str:
+        s = str(v).lower().strip()
+        return s if s in ("drop_oldest", "drop_newest") else "drop_oldest"
 
     @property
     def fp_dtype(self):
@@ -179,6 +237,11 @@ class SimConfig(BaseModel):
         if not isinstance(data, dict):
             return data
         data = dict(data)
+
+        if "benchmark" in data:
+            if "benchmark_name" not in data:
+                data["benchmark_name"] = data["benchmark"]
+            del data["benchmark"]
 
         render_d: Dict[str, Any] = {}
         if isinstance(data.get("render"), dict):

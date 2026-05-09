@@ -4,6 +4,7 @@ import sys
 # 必要なモジュールのインポート
 from run_benchmark_channel import extract_channel_profiles_from_npz, plot_poiseuille_validation
 from run_benchmark_cylinder import analyze_and_plot
+from config import SimConfig
 from main import run_simulation, run_optimize
 from lbm_logger import get_logger, configure_logging
 
@@ -49,52 +50,51 @@ def verify_parallel_plates(target_re=100.0):
         return
 
     state = result["state"]
-    nz=result["nx"] * 8 
-    max_time_p = nx * nz / result["alpha_f"]
-    paths_out = {}
+    paths_out: dict = {}
     nx = int(state["nx"])
+    nz = nx * 8
+    max_time_p = nx * nz / state["alpha_f"]
+    max_time_p = 10.0 # デバッグ用に10秒に固定
     artifact_parent = os.path.join("results", "validation_poiseuille")
-    # 2. シミュレーションの実行
-    run_simulation(
-        benchmark="parallel_plates",  # ジオメトリビルダーで定義済みの名前
+
+    cfg = SimConfig(
+        benchmark_name="parallel_plates",
         fp_dtype="float32",
-        steady_detection=True,        # 定常状態を自動検知して終了
+        steady_detection=True,
         steady_window_p=2.5,
         steady_tolerance=0.005,
-        steady_extra_p = 3.0,
+        steady_extra_p=3.0,
         state=state,
         artifact_parent=artifact_parent,
         periodic_x=True,
         periodic_y=True,
         periodic_z=False,
-    
-        nx=nx, ny=nx, nz=nx * 8,      # 流れが十分に発達する長さに設定
+        nx=nx,
+        ny=nx,
+        nz=nz,
         Lx_p=state["L_domain"],
         U_inlet_p=state["U"],
-        
-        max_time_p=max_time_p, 
+        max_time_p=max_time_p,
         ramp_time_p=2.0,
         visualization_mode="offline",
-        vis_interval=100, vti_export_interval=0,
-
         sponge_thickness=40.0,
         sponge_strength_decay_start_p=4.0,
         sponge_strength_decay_duration_p=5.0,
-        
-        # 最適化された物性値を各IDへマッピング
         domain_properties={
-            0:  {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
-            10: {"nu": 0.0,         "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]}, # 壁
-            20: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]}, # INLET
-            21: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]}, # OUTLET
+            0: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
+            10: {"nu": 0.0, "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
+            20: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
+            21: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
         },
         boundary_conditions={
             20: {"type": "inlet", "velocity": [0.0, 0.0, -state["u_lbm"]], "temperature": 0.0},
             21: {"type": "outlet"},
-            10: {"type": "isothermal_wall", "temperature": 1.0}, # 等温壁（NEEM適用）
+            10: {"type": "isothermal_wall", "temperature": 1.0},
         },
-        paths_out=paths_out
+        paths_out=paths_out,
+        render={"vis_interval": 100, "vti_export_interval": 0},
     )
+    run_simulation(cfg)
 
     # 3. 厳密解との比較プロット
     out_dir = paths_out.get("out_dir")
@@ -143,39 +143,33 @@ def verify_karman_vortex(target_re=150.0):
 
     state = result["state"]
     nx = int(state["nx"])
-    paths_out = {}
+    paths_out: dict = {}
     artifact_parent = os.path.join("results", "validation_karman_vortex")
-    # 2. シミュレーションの実行
-    # ※IBMのVPMとIterative Forcing（フェーズ3までの実装）をフル稼働させます
-    run_simulation(
-        benchmark="cylinder",         # 領域は単なる直方体 (境界はINLET/OUTLET)
+
+    cfg = SimConfig(
+        benchmark_name="cylinder",
         fp_dtype="float32",
-        steady_detection=False,       # カルマン渦は振動するため定常検知はOFF
+        steady_detection=False,
         state=state,
-        
         artifact_parent=artifact_parent,
         periodic_x=False,
         periodic_y=True,
         periodic_z=False,
-
-        nx=nx, ny=8, nz=nx * 4,       # 2D的な流れを見るためにnyは薄く
+        nx=nx,
+        ny=8,
+        nz=nx * 4,
         Lx_p=state["L_domain"],
         U_inlet_p=state["U"],
-        
-        max_time_p=20.0,              # カルマン渦が成長するまでの時間
-        ramp_time_p=2.0,              # 衝撃波を防ぐソフトスタート
+        max_time_p=10.0, # デバッグ用に10秒に固定
+        # max_time_p=40,
+        ramp_time_p=2.0,
         visualization_mode="offline",
-        vis_interval=100, 
-        vti_export_interval=0, 
-        particles_inject_per_step=200, # 渦を可視化するためのパーティクル
-
         sponge_thickness=40.0,
         sponge_strength_decay_start_p=3.0,
         sponge_strength_decay_duration_p=5.0,
-        
         domain_properties={
-            0:  {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
-            10: {"nu": 0.0,         "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
+            0: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
+            10: {"nu": 0.0, "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
             20: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
             21: {"nu": state["nu"], "k": state["k_f"], "rho": state["rho_f"], "Cp": state["Cp_f"]},
         },
@@ -183,28 +177,29 @@ def verify_karman_vortex(target_re=150.0):
             20: {"type": "inlet", "velocity": [0.0, 0.0, -state["u_lbm"]], "temperature": 0.0},
             21: {"type": "outlet"},
         },
-        
-        # ▼ IBM (Immersed Boundary Method) プラグインの設定 ▼
         physics_models={
             "immersed_boundary": {
                 "phase1_epsilon_lbm": 1.5,
-                "phase1_num_iterations": 3,   # 速度の反復強制 (Spurious flow除去)
-                "phase2_num_iterations": 3,   # 熱の反復強制
+                "phase1_num_iterations": 3,
+                "phase2_num_iterations": 3,
                 "phase2_enable_iterative_thermal": False,
                 "phase2_heat_relax": 1.0,
                 "objects": [
                     {
                         "shape": "cylinder",
-                        "radius_p": state["L_ref"] / 2.0, # 直径から半径へ
+                        "radius_p": state["L_ref"] / 2.0,
                         "center_p": [state["L_domain"] * 0.51, 0.0, state["L_domain"] * 4 * 0.85],
                         "type": "fixed",
-                        "temperature": 1.0
+                        "temperature": 1.0,
                     }
-                ]
+                ],
             }
         },
-        paths_out=paths_out
+        paths_out=paths_out,
+        render={"vis_interval": 100, "vti_export_interval": 0},
+        particles={"particles_inject_per_step": 200},
     )
+    run_simulation(cfg)
     
     out_dir = paths_out.get("out_dir")
     print(f"\n>>> シミュレーション完了。結果は {out_dir} に保存されました。")
@@ -227,8 +222,8 @@ def verify_karman_vortex(target_re=150.0):
 
 if __name__ == "__main__":
     # 1. Nu=7.54 と速度・温度プロファイルの検証
-    # for target_Re in [200.0, 300.0, 400.0, 500.0, 700.0, 900.0, 1000.0]:
-    #     verify_parallel_plates(target_Re)
+    for target_Re in [200.0, 300.0, 400.0, 500.0, 700.0, 900.0, 1000.0]:
+        verify_parallel_plates(target_Re)
     
     # 2. カルマン渦の検証
     for target_re in [100.0, 150.0, 200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0]:
