@@ -6,7 +6,7 @@ import taichi as ti
 from main import run_simulation, run_optimize
 from geometry import GeometryBuilder
 import physics
-
+from config import SimConfig, RenderConfig, ParticleConfig
 # =====================================================================
 # 1. モンキーパッチ: カスタム物理モデルを外部から注入できるようにする
 # =====================================================================

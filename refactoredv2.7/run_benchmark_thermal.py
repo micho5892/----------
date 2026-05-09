@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
 # シミュレータ本体からのインポート
-from config import SimConfig
+from config import SimConfig, RenderConfig, ParticleConfig
 from main import run_simulation, run_optimize
 from lbm_logger import get_logger
 

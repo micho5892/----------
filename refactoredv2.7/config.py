@@ -54,8 +54,9 @@ class ParticleConfig(BaseModel):
 
 
 class SimConfig(BaseModel):
-    """シミュレーションの全設定を管理する Pydantic モデル"""
-
+    """
+    シミュレーションの全設定を管理する Pydantic モデル
+    """
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     fp_dtype_str: Literal["float32", "float16"] = Field(

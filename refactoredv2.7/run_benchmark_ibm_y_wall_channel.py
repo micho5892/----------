@@ -4,7 +4,7 @@ import sys
 # 必要なモジュールのインポート
 from run_benchmark_channel import extract_channel_profiles_from_npz, plot_poiseuille_validation
 from run_benchmark_cylinder import analyze_and_plot
-from config import SimConfig
+from config import SimConfig, RenderConfig, ParticleConfig
 from main import run_simulation, run_optimize
 from lbm_logger import get_logger, configure_logging
 

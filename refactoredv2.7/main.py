@@ -52,6 +52,13 @@ class AsymptoticSteadyDetector:
     定常化までの「残り時間（ETA）」を物理ベースで算出する高度な判定器。
     """
     def __init__(self, window_time_p, dt_sample, tolerance):
+        """初期化
+
+        Args:
+            window_time_p (float): ウィンドウ時間[s]
+            dt_sample (float): サンプリング間隔[s]
+            tolerance (float): 許容誤差
+        """
         # サンプリング間隔とウィンドウサイズの設定
         self.dt_sample = dt_sample
         # 振動（カルマン渦など）を吸収するため、ウィンドウ内のデータ数は最低でも20は確保
