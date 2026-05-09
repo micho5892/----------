@@ -23,10 +23,15 @@ class RenderConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     vis_interval: int = Field(20, ge=1, description="可視化のステップ間隔")
+    """可視化のステップ間隔。動画用。"""
     filename: str = Field("output.gif", description="出力ファイル名")
+    """出力ファイル名"""
     output_format: Literal["gif", "mp4"] = Field("gif", description="出力フォーマット")
+    """出力フォーマット。gif または mp4 """
     vti_export_interval: int = Field(0, ge=0, description="VTI出力間隔(0で無効)")
+    """VTI出力間隔(0で無効)"""
     vti_path_template: str = Field("results/step_{:06d}.vti")
+    """VTI出力パステンプレート"""
 
     @field_validator("output_format", mode="before")
     @classmethod
@@ -66,25 +71,38 @@ class SimConfig(BaseModel):
     Lx_p: float = Field(0.1, gt=0.0, description="X方向の物理長[m]")
 
     render: RenderConfig = Field(default_factory=RenderConfig)
+    """可視化・出力に関する設定"""
     particles: ParticleConfig = Field(default_factory=ParticleConfig)
+    """パーティクル（流線確認用）に関する設定"""
 
     sponge_thickness: float = Field(0.0, ge=0.0)
+    """スポンジ厚み（物理長）"""
     sponge_strength_decay_start_p: float = Field(0.0)
+    """スポンジ強度減衰開始時間（秒）"""
     sponge_strength_decay_duration_p: float = Field(0.0)
+    """スポンジ強度減衰期間（秒）"""
 
     steps: int = Field(600, ge=1)
+    """ステップ数。max_time_p で物理時間。"""
+
 
     # キーはセル ID で int のことが多い（従来コード・ベンチスクリプト互換）。str も許容。
     boundary_conditions: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    """境界条件"""
     physics_models: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    """物理モデル"""
     domain_properties: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    """物性"""
 
     U_inlet_p: float = Field(1.0, description="代表物理流速")
     u_lbm_inlet: float = Field(0.1, description="LBM単位での代表流速（inlet から自動上書き可）")
 
     periodic_x: bool = Field(False)
+    """X方向の周期境界条件"""
     periodic_y: bool = Field(False)
+    """Y方向の周期境界条件"""
     periodic_z: bool = Field(False)
+    """Z方向の周期境界条件"""
 
     neem_isothermal_wall: bool = Field(True)
 
@@ -116,18 +134,26 @@ class SimConfig(BaseModel):
     ramp_time_p: float = Field(1.0, ge=0, description="立ち上げ時間（秒）。この間外力が徐々に立ち上がる")
 
     steady_detection: bool = Field(True, description="定常状態を自動検知して早期終了するか")
+    """定常状態を自動検知して早期終了するか"""
     steady_window_p: float = Field(1.0, gt=0, description="定常検知の判定ウィンドウ（秒）")
+    """定常検知の判定ウィンドウ（秒）"""
     steady_tolerance: float = Field(0.001, gt=0, description="定常検知の許容誤差割合")
+    """定常検知の許容誤差割合"""
     steady_extra_p: float = Field(2.0, ge=0, description="定常検知後の追加実行時間（秒）")
+    """定常検知後の追加実行時間（秒）"""
 
     target_video_fps: Optional[float] = Field(None, description="出力動画の目標FPS（指定時は vis_interval を自動計算）")
+    """出力動画の目標FPS（指定時は vis_interval を自動計算）"""
 
     visualization_mode: Literal["realtime", "offline", "none"] = Field(
         "realtime",
         description="可視化モード",
     )
+    """可視化モード。計算速度を極限まで上げたい場合やデータ出力だけ欲しい場合は「none」にします。"""
     visualization_queue_size: int = Field(8, ge=1, description="非同期可視化のキューサイズ")
+    """非同期可視化のキューサイズ。"""
     visualization_drop_policy: Literal["drop_oldest", "drop_newest"] = Field("drop_oldest")
+    """非同期可視化のドロップポリシー"""
 
     data_export_interval: int = Field(0, ge=0, description="機械学習用データの保存間隔ステップ（0で無効）")
     data_export_start_p: float = Field(5.0, ge=0, description="データ保存を開始する物理時間（秒）")
