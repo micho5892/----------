@@ -210,6 +210,7 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     # 熱拡散のみの場合の緩和時間 t_c を基準に、対流による冷却が完了する時間を設定
     t_c = (L_eff**2) / alpha_w
     max_time_p = t_c * 0.8 
+    max_time_p = 10.0
     print(f"[{case_name}] Running up to {max_time_p:.3f} s")
     
     artifact_parent = os.path.join("results", "mpemba_effect")
@@ -230,6 +231,7 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         U_inlet_p=state["U"], 
         u_lbm=state["u_lbm"],    
         output_format="mp4",
+
         visualization_mode="offline", # アニメーションを生成
         target_video_fps=60,
         max_time_p=max_time_p,
