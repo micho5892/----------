@@ -15,8 +15,9 @@ _original_init = physics.PhysicsManager.__init__
 def _patched_init(self, d3q19, cfg):
     _original_init(self, d3q19, cfg)
     # SimConfig に custom_physics_models があれば追加で読み込む
-    if hasattr(cfg, "custom_physics_models"):
-        for model in cfg.custom_physics_models:
+    extras = getattr(cfg, "custom_physics_models", None)
+    if extras:
+        for model in extras:
             self.models.append(model)
 
 physics.PhysicsManager.__init__ = _patched_init

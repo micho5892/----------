@@ -228,7 +228,13 @@ def run_simulation(**kwargs):
     logger = get_logger(__name__)
     logger.info("Output run directory: %s", os.path.abspath(out_dir))
 
-    cfg = SimConfig(**kwargs)
+    try:
+        cfg = SimConfig(**kwargs)
+    except Exception as e:
+        err_msg = f"パラメータ設定エラー: {e}"
+        logger.error("%s", err_msg)
+        print(err_msg)
+        return False
     if target_video_fps is not None:
         target_video_fps = max(1.0, float(target_video_fps))
         auto_vis_interval = max(1, int(round(1.0 / (target_video_fps * cfg.dt))))
