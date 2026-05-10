@@ -33,6 +33,18 @@ class RenderConfig(BaseModel):
     vti_path_template: str = Field("results/step_{:06d}.vti")
     """VTI出力パステンプレート"""
 
+    target_video_fps: Optional[float] = Field(
+        None, description="出力動画の目標FPS（指定時は vis_interval を自動計算）"
+    )
+    """出力動画の目標FPS（指定時は vis_interval を自動計算）。"""
+
+    @field_validator("target_video_fps", mode="before")
+    @classmethod
+    def _norm_target_fps(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        return float(v)
+
     @field_validator("output_format", mode="before")
     @classmethod
     def _norm_output_format(cls, v: Any) -> str:
@@ -96,8 +108,9 @@ class SimConfig(BaseModel):
         セルID (int): 0(流体), 10(固体) など。
     【指定可能な値と機能】
         - nu  (float): 動粘性係数 [m^2/s]。流体の粘り気。
-                       ※ `nu` を 0.0（または 1e-12 以下）に設定すると、そのIDの領域は
-                       「固体（流速ゼロ）」として扱われます。
+                       ※ `nu` を 0.0（または 1e-12 以下）にすると流速は解かれない（固体扱い）。
+                       固体内部で温度 LBM を回す（共役熱伝達）には `boundary_conditions` で
+                       `{"type": "cht_solid"}` を同じ ID に明示すること。
         - k   (float): 熱伝導率 [W/(m K)]。熱の伝わりやすさ。
         - rho (float): 密度[kg/m^3]。
         - Cp  (float): 比熱 [J/(kg K)]。
@@ -138,35 +151,43 @@ class SimConfig(BaseModel):
 
     boundary_conditions: Dict[Union[str, int], Any] = Field(default_factory=dict)
     """
-    特定のセルIDに対する境界条件（壁、入口、出口など）を定義する辞書。何も指定しない場合は共役熱伝達として扱う。
-    
+    特定のセルIDに対する境界条件（壁、入口、出口、CHT 固体の宣言など）を定義する辞書。
+
+    共役熱伝達（固体内部で温度 LBM を回す）が必要な **nu≈0 の領域**は、
+    `domain_properties` に物性を書くだけでは不十分であり、**type が "cht_solid" のエントリで明示**する。
+
     【キー】
         セルID (int): 適用したい領域のID（例: 20=入口, 21=出口, 10=壁）
     【有効な "type" と機能】
         - "inlet" : 流入境界（ディリクレ）
             [機能] 指定した速度と温度で流体を強制的に押し込みます。
             [追加引数] `velocity` (リスト), `temperature` (float)
-            
+
         - "outlet" : 流出境界（ノイマン/圧力固定）
             [機能] 流体を外に逃がします。逆流しようとした場合は速度をゼロに制限します。
-            
+
         - "isothermal_wall" : 等温壁
             [機能] 壁の温度を一定に保ちます（熱源または冷却源）。
             [追加引数] `temperature` (float)
-            
+
         - "constant_heat_flux" : 定熱流束壁
             [機能] 一定のペースで熱を与え（奪い）続けます。
             [追加引数] `q` (float)
-            
+
         - "adiabatic_wall" : 断熱壁
             [機能] 熱を通さない（勾配ゼロ）壁として扱います。
-            
+
+        - "cht_solid" : 熱伝導ブロック（共役熱伝達）
+            [機能] 流速ゼロのまま、`domain_properties` の k, rho, Cp に基づき温度場を移流・緩和する固体領域として扱う。
+            [注意] 等温壁・断熱壁など別の wall 型と同じ ID には指定しないこと。
+
     例:
     ```python
     {
         20: {"type": "inlet", "velocity": [0.1, 0.0, 0.0], "temperature": 1.0},
         21: {"type": "outlet"},
-        10: {"type": "isothermal_wall", "temperature": 0.0}
+        10: {"type": "isothermal_wall", "temperature": 0.0},
+        2: {"type": "cht_solid"},  # 伝導のみの固体ブロック（別 ID）
     }
     ```
     """
@@ -220,9 +241,6 @@ class SimConfig(BaseModel):
     steady_extra_p: float = Field(2.0, ge=0, description="定常検知後の追加実行時間（秒）")
     """定常検知後の追加実行時間（秒）"""
 
-    target_video_fps: Optional[float] = Field(None, description="出力動画の目標FPS（指定時は vis_interval を自動計算）")
-    """出力動画の目標FPS（指定時は vis_interval を自動計算）"""
-
     visualization_mode: Literal["realtime", "offline", "none"] = Field(
         "realtime",
         description="可視化モード",
@@ -242,13 +260,6 @@ class SimConfig(BaseModel):
     vti_dir: Optional[str] = Field(None, description="明示的な VTI 出力ディレクトリ（未指定時は <out>/vti）")
 
     flow_type: str = Field("counter", description="熱交換器などでの向き（例: counter / co-current）。geometry が参照する場合用")
-
-    @field_validator("target_video_fps", mode="before")
-    @classmethod
-    def _norm_target_fps(cls, v: Any) -> Any:
-        if v is None or v == "":
-            return None
-        return float(v)
 
     @field_validator("visualization_mode", mode="before")
     @classmethod
@@ -317,6 +328,14 @@ class SimConfig(BaseModel):
         self.render.vti_path_template = value
 
     @property
+    def target_video_fps(self) -> Optional[float]:
+        return self.render.target_video_fps
+
+    @target_video_fps.setter
+    def target_video_fps(self, value: Optional[float]) -> None:
+        self.render.target_video_fps = value
+
+    @property
     def n_particles(self) -> int:
         return self.particles.n_particles
 
@@ -356,6 +375,7 @@ class SimConfig(BaseModel):
             "output_format",
             "vti_export_interval",
             "vti_path_template",
+            "target_video_fps",
         ):
             if key in data and key not in render_d:
                 render_d[key] = data[key]
@@ -443,11 +463,11 @@ class SimConfig(BaseModel):
         return 0.5 * (1.0 + math.cos(math.pi * t / dur))
 
     def get_materials_dict(self):
-        """設定された各IDの物性から、独立して tau_f, tau_g を計算してテーブルに登録する。
+        """設定された各IDの物性から tau_f, tau_g を計算し、流体/CHT フラグを付与する。
 
         戻り値は (tau_f, tau_g, is_fluid_flag, is_solid_cht)。
-        is_solid_cht==1 の固体は共役熱伝達（CHT）として温度 LBM を流体と同様に移流・緩和する。
-        boundary_conditions で type に 'wall' を含む境界 ID は CHT 対象外（等温・断熱壁など）。
+        is_solid_cht==1 は **boundary_conditions で type=="cht_solid" と明示された ID のみ**
+        （暗黙に「nu=0 ならすべて CHT」とはしない）。
         """
         mat_dict: Dict[Any, Tuple[Any, Any, Any, Any]] = {}
 
@@ -465,13 +485,16 @@ class SimConfig(BaseModel):
             tau_g = 3.0 * alpha_lbm + 0.5
 
             is_fluid_flag = 0 if nu <= 1e-12 else 1
-            is_solid_cht = 1 if is_fluid_flag == 0 else 0
+            is_solid_cht = 0
 
             if cid in self.boundary_conditions:
-                bc_type = self.boundary_conditions[cid].get("type", "")
-                if "wall" in bc_type:
+                bc_spec = self.boundary_conditions[cid]
+                bc_type = str(bc_spec.get("type", "") if bc_spec else "")
+                if bc_type == "cht_solid":
                     is_fluid_flag = 0
-                    is_solid_cht = 0
+                    is_solid_cht = 1
+                elif "wall" in bc_type:
+                    is_fluid_flag = 0
 
             mat_dict[cid] = (tau_f, tau_g, is_fluid_flag, is_solid_cht)
 

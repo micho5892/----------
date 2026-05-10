@@ -153,7 +153,7 @@ def design_heat_exchanger(
             24: {{"type": "inlet",  "velocity":[0.0, 0.0, -{u_lbm_out}], "temperature": 0.0}},
             23: {{"type": "outlet"}},
             25: {{"type": "outlet"}},
-            10: {{"type": "adiabatic_wall"}}, 
+            10: {{"type": "cht_solid"}},
         }},
         flow_type="counter"
     )"""

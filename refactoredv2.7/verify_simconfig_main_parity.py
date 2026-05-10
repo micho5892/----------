@@ -40,7 +40,14 @@ def main() -> int:
 
     # render / particles に昇格させるフラットキー（SimConfig に同名フィールドなしでも有効）
     HOIST_RENDER = frozenset(
-        ["vis_interval", "filename", "output_format", "vti_export_interval", "vti_path_template"]
+        [
+            "vis_interval",
+            "filename",
+            "output_format",
+            "vti_export_interval",
+            "vti_path_template",
+            "target_video_fps",
+        ]
     )
     HOIST_PARTICLES = frozenset(["n_particles", "particles_inject_per_step"])
 

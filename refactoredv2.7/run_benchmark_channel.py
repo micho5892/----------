@@ -438,6 +438,8 @@ def run_channel_benchmark_lbm(artifact_parent=None):
         boundary_conditions={
             20: {"type": "inlet", "velocity": [0.0, 0.0, -U_inlet_p], "temperature": 0.0},
             21: {"type": "outlet"},
+            # IBM チャネルの X 方向側壁（SOLID）— 伝導固体として熱方程式を明示的に有効化
+            10: {"type": "cht_solid"},
         },
         physics_models={
             "immersed_boundary": {

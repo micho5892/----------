@@ -176,6 +176,8 @@ def verify_karman_vortex(target_re=150.0):
         boundary_conditions={
             20: {"type": "inlet", "velocity": [0.0, 0.0, -state["u_lbm"]], "temperature": 0.0},
             21: {"type": "outlet"},
+            # 格子固体（円柱内部）で温度 LBM を回すには明示宣言が必要（IBM とは別経路）
+            10: {"type": "cht_solid"},
         },
         physics_models={
             "immersed_boundary": {

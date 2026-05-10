@@ -174,6 +174,10 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         "target_regularization": 1.0,
         "regularization": 1.0e-5,
         "maxiter": 300000,
+        # run_optimize 戻り visualization 用（最適化制約には使わない）
+        "target_video_fps": 60.0,
+        "max_time_p": 10.0,
+        "vti_vis_interval_multiplier": 5,
     }
 
     print(f"\n--- Optimizing parameters for {case_name} ---")
@@ -181,7 +185,8 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     if not result["success"]:
         print(f"[ERROR] {case_name}: パラメータ最適化に失敗")
         return None, None
-        
+
+    vis = result.get("visualization") or {}
     state = result["state"]
     nu_w = state["nu"]
     k_w = state["k_f"]
@@ -217,9 +222,12 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     artifact_parent = os.path.join("results", "mpemba_effect")
     paths_out: dict = {}
 
+    _vti = vis.get("vti_export_interval")
+    _fps = vis.get("target_video_fps")
     render_cfg = RenderConfig(
         output_format="mp4",
-        vti_export_interval=0,
+        vti_export_interval=1000 if _vti is None else int(_vti),
+        target_video_fps=60.0 if _fps is None else float(_fps),
     )
     particle_cfg = ParticleConfig(
         n_particles=0,
@@ -241,7 +249,6 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         U_inlet_p=state["U"],
         u_lbm_inlet=float(state["u_lbm"]),
         visualization_mode="none",
-        target_video_fps=60.0,
         max_time_p=max_time_p,
         ramp_time_p=0.0,
         sponge_thickness=0.0,
@@ -256,6 +263,7 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         },
         boundary_conditions={
             10: {"type": "isothermal_wall", "temperature": 0.0},
+            2: {"type": "cht_solid"},
             21: {"type": "outlet"},
         },
         custom_physics_models=[monitor],

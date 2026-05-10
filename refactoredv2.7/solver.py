@@ -78,14 +78,14 @@ class LBMSimulator:
             # 1. 温度場 g の緩和と移流（流体 & CHT 固体。IBM 界面は流体側で φ ブレンド）
             # ==========================================================
             if self.is_thermal_active(ctx, cid):
+                # 先に材料の τ_g を取る（CHT 固体はここで確定。Taichi の分岐解析でも未定義にならない）
+                tau_g = ctx.tau_g_table[cid]
                 if self.is_fluid(ctx, cid):
                     phi_val = ctx.phi[i, j, k]
                     tau_g_fluid = ctx.tau_g_table[cid]
                     tau_g_solid = ctx.tau_g_table[SOLID]
                     denom_tau = phi_val * tau_g_fluid + (1.0 - phi_val) * tau_g_solid
                     tau_g = (tau_g_fluid * tau_g_solid) / (denom_tau + 1e-12)
-                else:
-                    tau_g = ctx.tau_g_table[cid]
                 omega_g = 1.0 / tau_g
                 v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
                 temp = ctx.temp[i, j, k]
