@@ -3,6 +3,8 @@
 # cd C:\Users\hainy\OneDrive\デスクトップ\短大\流体シミュレーション
 # streamlit run lbm_ui_designer\app.py
 # ==========================================================
+import math
+
 import streamlit as st
 import sympy as sp
 
@@ -200,13 +202,96 @@ st.divider()
 # 5. 実行用コードの自動生成
 # ==========================================
 st.header("📋 実行コードの生成")
-st.markdown("変数がすべて確定すると、そのまま `main.py` に貼り付けられるコードが生成されます。")
+st.markdown(
+    "変数がすべて確定すると、そのまま `run_simulation` に貼り付けられるコードが生成されます。"
+    " **目標 FPS** は `refactoredv2.7/main.py` と同じ式で "
+    "`vis_interval ≈ round(1 / (FPS × dt))` となります（生成コードでは `target_video_fps` を渡し、実行時に自動設定）。"
+)
 
 def get_val(sym): 
     return known_vars.get(sym, st.session_state.get(f"shadow_{sym.name}", 0.0))
 
 fluid_name = st.session_state.get("fluid_sel", "Fluid")
 solid_name = st.session_state.get("solid_sel", "Solid")
+
+_sys_ok = len(unresolved) == 0 and conflict_count == 0
+_dt_val = float(get_val(dt)) if _sys_ok else 0.0
+
+use_fps_codegen = False
+video_fps = 60.0
+max_time_p_ui = 30.0
+vti_mult = 5
+vis_interval_from_fps = 100
+vti_export_from_fps = 500
+n_steps_est = 0
+
+st.subheader("🎬 可視化間隔（FPS から計算）")
+if _sys_ok and _dt_val > 0.0:
+    c_fps, c_tmax, c_vti = st.columns(3)
+    with c_fps:
+        video_fps = st.number_input(
+            "目標動画 FPS",
+            min_value=1.0,
+            max_value=240.0,
+            value=60.0,
+            step=1.0,
+            help="main.py: vis_interval = max(1, round(1 / (FPS × dt)))",
+        )
+    with c_tmax:
+        max_time_p_ui = st.number_input(
+            "シミュレーション時間 max_time_p [s]",
+            min_value=1e-6,
+            value=30.0,
+            step=1.0,
+            format="%.4f",
+        )
+    with c_vti:
+        vti_mult = st.number_input(
+            "VTI 出力間隔の倍率",
+            min_value=0,
+            max_value=1000,
+            value=5,
+            step=1,
+            help="0 で VTI 無効。N>0 なら vti_export_interval = N × vis_interval（丸め）。",
+        )
+
+    vis_interval_from_fps = max(1, int(round(1.0 / (float(video_fps) * _dt_val))))
+    n_steps_est = int(math.ceil(float(max_time_p_ui) / _dt_val))
+
+    parts = [
+        f"**dt** = `{_dt_val:.6e}` s",
+        f"**vis_interval**（参考）≈ **`{vis_interval_from_fps}`** ステップ / 動画コマ（main が target_video_fps から同値を設定）",
+        f"**総ステップ数**（おおよそ） **`{n_steps_est}`** （= ceil(max_time_p / dt)）",
+    ]
+    if vti_mult > 0:
+        vti_export_from_fps = max(1, vis_interval_from_fps * int(vti_mult))
+        parts.append(f"**vti_export_interval**（提案）= **`{vti_export_from_fps}`** （= {vti_mult} × vis_interval）")
+    else:
+        vti_export_from_fps = 0
+        parts.append("**VTI** は無効（`vti_export_interval=0`）")
+
+    st.success(" · ".join(parts))
+    use_fps_codegen = True
+elif not _sys_ok:
+    st.info("方程式が未確定のため FPS 連動のステップ計算はできません。確定後に再表示してください。")
+else:
+    st.warning("dt が 0 以下のため FPS からステップを計算できません。")
+
+
+def _timing_kwargs_block() -> str:
+    """SimConfig に渡す時間・可視化ブロックの文字列（インデント付き複数行）。"""
+    if use_fps_codegen:
+        lines = [
+            f"    max_time_p={max_time_p_ui:.6f}, ramp_time_p=2.0,",
+            f"    target_video_fps={float(video_fps):.6f},",
+        ]
+        lines.append(f"    vti_export_interval={int(vti_export_from_fps)},")
+        return "\n".join(lines)
+    return (
+        "    max_time_p=30.0, ramp_time_p=2.0,\n"
+        "    vis_interval=100, vti_export_interval=500,"
+    )
+
 
 sim_code = f"""run_simulation(
     benchmark="heat_exchanger",
@@ -216,8 +301,7 @@ sim_code = f"""run_simulation(
     Lx_p={get_val(L_domain):.4e}, 
     
     U_inlet_p={get_val(u):.4e},
-    max_time_p=30.0, ramp_time_p=2.0,
-    vis_interval=100, vti_export_interval=500,
+{_timing_kwargs_block()}
     
     # ▼ Auto-Designed Similarity Parameters
     # Target Re={get_val(Re):.1f} (based on L_ref={get_val(L_ref):.4f}), Pr_sim={get_val(Pr):.2f}, Cr={get_val(C_r):.4f}

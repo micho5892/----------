@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # シミュレータ本体からのインポート
 from main import run_simulation
-from config import SimConfig
+from config import SimConfig, RenderConfig, ParticleConfig
 
 # ==============================================================================
 # Ghia et al. (1982) 参照データ: プロジェクトの ベンチマークテストデータ/*.csv

@@ -40,3 +40,8 @@ ranges:
 
 regularization: 1.0e-3
 maxiter: 30000
+
+# --- 任意: run_optimize 戻り値の visualization を埋めるための入力（最適化制約には使わない）
+# target_video_fps: 60
+# max_time_p: 30.0
+# vti_vis_interval_multiplier: 5   # 0 で VTI 無効、N>0 で vti_export_interval = N * vis_interval

@@ -11,7 +11,9 @@ from datetime import datetime
 import json
 import numpy as np
 from pprint import pprint, pformat
+from typing import Any, Optional
 
+from config import SimConfig
 from lbm_logger import configure_logging, get_logger
 
 
@@ -50,6 +52,13 @@ class AsymptoticSteadyDetector:
     定常化までの「残り時間（ETA）」を物理ベースで算出する高度な判定器。
     """
     def __init__(self, window_time_p, dt_sample, tolerance):
+        """初期化
+
+        Args:
+            window_time_p (float): ウィンドウ時間[s]
+            dt_sample (float): サンプリング間隔[s]
+            tolerance (float): 許容誤差
+        """
         # サンプリング間隔とウィンドウサイズの設定
         self.dt_sample = dt_sample
         # 振動（カルマン渦など）を吸収するため、ウィンドウ内のデータ数は最低でも20は確保
@@ -123,7 +132,26 @@ class AsymptoticSteadyDetector:
         return False
 
 
-def run_simulation(**kwargs):
+def run_simulation(cfg: Optional[SimConfig] = None, **kwargs: Any) -> bool:
+    """シミュレーションを実行する。
+
+    推奨: ``run_simulation(SimConfig(...))`` 。すべての実行パラメータは ``SimConfig`` に集約。
+    後方互換: 従来どおり ``run_simulation(benchmark=\"cylinder\", nx=128, ...)`` も可（内部で ``SimConfig`` 化）。
+    SimConfig と **kwargs は同時に指定できない。
+    """
+    if cfg is not None and kwargs:
+        raise TypeError("run_simulation: SimConfig と **kwargs は同時に渡せません")
+    if cfg is None:
+        if not kwargs:
+            raise TypeError(
+                "run_simulation には SimConfig を渡すか、従来どおりキーワード引数で指定してください"
+            )
+        try:
+            cfg = SimConfig(**kwargs)
+        except Exception as e:
+            print(f"パラメータ設定エラー: {e}")
+            return False
+
     import taichi as ti
 
     _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -133,8 +161,7 @@ def run_simulation(**kwargs):
     # Taichi は run_simulation 内で初回のみ初期化（arch は最初の呼び出しで確定）
     _ti_initialized = False
 
-    from context import SimulationContext, INLET, OUTLET
-    from config import SimConfig
+    from context import SimulationContext
     from geometry import GeometryBuilder
     from boundary import BoundaryManager
     from solver import LBMSimulator
@@ -156,86 +183,54 @@ def run_simulation(**kwargs):
 
     # global _ti_initialized
     if not _ti_initialized:
-        arch = kwargs.pop("arch", "gpu")
         ti.init(
-            arch=ti.cpu if arch == "cpu" else ti.gpu,
+            arch=ti.cpu if cfg.arch == "cpu" else ti.gpu,
             device_memory_fraction=1.0
         )
-        _ti_initialized = True
 
-    benchmark = kwargs.pop("benchmark", "cylinder")
-    state = kwargs.pop("state", {})
-    kwargs["benchmark_name"] = benchmark
+    benchmark = cfg.benchmark_name
+    state = cfg.state
 
-    # kwargsからエクスポート設定を取得
-    data_export_interval = kwargs.pop("data_export_interval", 0)
-    data_export_start_p = kwargs.pop("data_export_start_p", 5.0)
-            
-    ramp_time_p = kwargs.pop("ramp_time_p", 1.0)            
-    steady_detection = kwargs.pop("steady_detection", True)  # True: 定常検知で早期終了, False: max_time_p までのみ実行
-    steady_window_p = kwargs.pop("steady_window_p", 1.0)    
-    steady_tolerance = kwargs.pop("steady_tolerance", 0.001) 
-    steady_extra_p = kwargs.pop("steady_extra_p", 2.0)      
-    max_time_p = kwargs.pop("max_time_p", 10.0) 
-    target_video_fps = kwargs.pop("target_video_fps", None)
-    visualization_mode = str(kwargs.pop("visualization_mode", "realtime")).lower().strip()
-    if visualization_mode not in ("realtime", "offline", "none"):
-        visualization_mode = "realtime"
-    visualization_queue_size = int(kwargs.pop("visualization_queue_size", 8))
-    visualization_drop_policy = str(kwargs.pop("visualization_drop_policy", "drop_oldest")).lower().strip()
-
-    # 出力先: artifact_parent を指定すると「その直下に 1 実行ごとのサブフォルダ」を作成する。
-    # 未指定かつ out_dir も無いときの既定の親は results（従来と同様に results/<benchmark>_<timestamp>/）。
-    # paths_out に dict を渡すと、確定した out_dir / vti_dir / npz 相当の情報を書き戻す。
-    artifact_parent = kwargs.pop("artifact_parent", None)
-    paths_out = kwargs.pop("paths_out", None)
-    explicit_out_dir = kwargs.pop("out_dir", None)
-    explicit_vti_dir = kwargs.pop("vti_dir", None)
-
+    user_explicit_out_dir = cfg.out_dir
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_subdir = f"{benchmark}_{timestamp}"
 
-    if artifact_parent is not None:
-        ap = str(artifact_parent).strip()
+    if cfg.artifact_parent is not None:
+        ap = str(cfg.artifact_parent).strip()
         if not ap:
             ap = "results"
         os.makedirs(ap, exist_ok=True)
         out_dir = os.path.join(ap, run_subdir)
-    elif explicit_out_dir is not None:
-        out_dir = explicit_out_dir
+    elif user_explicit_out_dir is not None:
+        out_dir = user_explicit_out_dir
     else:
         out_dir = os.path.join("results", run_subdir)
 
     os.makedirs(out_dir, exist_ok=True)
 
-    if explicit_vti_dir is not None:
-        vti_dir = explicit_vti_dir
+    if cfg.vti_dir is not None:
+        vti_dir = cfg.vti_dir
     else:
         vti_dir = os.path.join(out_dir, "vti")
     os.makedirs(vti_dir, exist_ok=True)
-    
-    # ファイルのパス設定（output_format があれば既定拡張子に反映）
-    output_format = str(kwargs.pop("output_format", "gif")).lower().strip()
-    if output_format not in ("gif", "mp4"):
-        output_format = "gif"
-    anim_ext = ".mp4" if output_format == "mp4" else ".gif"
-    animation_path = kwargs.get("filename", os.path.join(out_dir, f"{benchmark}_{timestamp}{anim_ext}"))
-    kwargs["filename"] = animation_path
+
+    anim_ext = ".mp4" if cfg.output_format == "mp4" else ".gif"
+    auto_animation_path = os.path.join(out_dir, f"{benchmark}_{timestamp}{anim_ext}")
+    if cfg.filename == "output.gif":
+        cfg.filename = auto_animation_path
     log_path = os.path.join(out_dir, f"{benchmark}_{timestamp}.log")
-    
-    # ロガー（lbm_logger: 実行フォルダの .log とコンソールへ）
+
     configure_logging(log_path)
     logger = get_logger(__name__)
     logger.info("Output run directory: %s", os.path.abspath(out_dir))
 
-    cfg = SimConfig(**kwargs)
-    if target_video_fps is not None:
-        target_video_fps = max(1.0, float(target_video_fps))
-        auto_vis_interval = max(1, int(round(1.0 / (target_video_fps * cfg.dt))))
+    if cfg.target_video_fps is not None:
+        cfg.target_video_fps = max(1.0, float(cfg.target_video_fps))
+        auto_vis_interval = max(1, int(round(1.0 / (cfg.target_video_fps * cfg.dt))))
         cfg.vis_interval = auto_vis_interval
         logger.info(
             "Auto vis_interval enabled: target_video_fps=%.3f, dt=%.6e => vis_interval=%d",
-            target_video_fps,
+            cfg.target_video_fps,
             cfg.dt,
             cfg.vis_interval,
         )
@@ -252,7 +247,7 @@ def run_simulation(**kwargs):
 
     # DataExporterの初期化 (保存間隔が設定されていれば)
     exporter = None
-    if data_export_interval > 0:
+    if cfg.data_export_interval > 0:
         export_dir = os.path.join(out_dir, "training_data/run_01")
         exporter = DataExporter(ctx, cfg, output_dir=export_dir)
 
@@ -310,10 +305,14 @@ def run_simulation(**kwargs):
             analytics.nu_k_ref_mode,
         )
 
-    if steady_detection:
+    if cfg.steady_detection:
         dt_sample = cfg.dt * cfg.vis_interval  # updateを呼ぶ実時間間隔
-        detector_v = AsymptoticSteadyDetector(steady_window_p, dt_sample, steady_tolerance)
-        detector_t = AsymptoticSteadyDetector(steady_window_p, dt_sample, steady_tolerance)
+        detector_v = AsymptoticSteadyDetector(
+            cfg.steady_window_p, dt_sample, cfg.steady_tolerance
+        )
+        detector_t = AsymptoticSteadyDetector(
+            cfg.steady_window_p, dt_sample, cfg.steady_tolerance
+        )
     else:
         detector_v = None
         detector_t = None
@@ -322,37 +321,39 @@ def run_simulation(**kwargs):
     global_steady_time_p = None
 
     frames =[]
-    if target_video_fps is not None:
-        fps = max(1, int(round(float(target_video_fps))))
+    if cfg.target_video_fps is not None:
+        fps = max(1, int(round(float(cfg.target_video_fps))))
     else:
         fps = int(1 / (cfg.vis_interval * cfg.dt))
     vis_snapshots_dir = os.path.join(out_dir, "vis_snapshots")
     async_vis = None
     cell_id_np_cache = None
-    if visualization_mode in ("realtime", "offline"):
+    if cfg.visualization_mode in ("realtime", "offline"):
         cell_id_np_cache = ctx.cell_id.to_numpy()
-    if visualization_mode == "realtime":
+    if cfg.visualization_mode == "realtime":
         async_vis = AsyncAnimationPipeline(
             cfg=cfg,
             filename=cfg.filename,
             fps=fps,
-            max_queue=visualization_queue_size,
-            drop_policy=visualization_drop_policy,
+            max_queue=cfg.visualization_queue_size,
+            drop_policy=cfg.visualization_drop_policy,
         )
         logger.info(
             "Visualization mode: realtime (async queue=%d, drop_policy=%s)",
-            visualization_queue_size,
-            visualization_drop_policy,
+            cfg.visualization_queue_size,
+            cfg.visualization_drop_policy,
         )
-    elif visualization_mode == "offline":
+    elif cfg.visualization_mode == "offline":
         os.makedirs(vis_snapshots_dir, exist_ok=True)
         logger.info("Visualization mode: offline (save snapshots only)")
     else:
         logger.info("Visualization mode: none (skip animation generation)")
     logger.info(f"--- Starting Benchmark: {benchmark.upper()} ---")
     logger.info(f"State: {pformat(state)}")
-    logger.info(f"Grid: {cfg.nx}x{cfg.ny}x{cfg.nz} | Max Time: {max_time_p:.2f} s | dt: {cfg.dt:.6e} s")
-    if steady_detection:
+    logger.info(
+        f"Grid: {cfg.nx}x{cfg.ny}x{cfg.nz} | Max Time: {cfg.max_time_p:.2f} s | dt: {cfg.dt:.6e} s"
+    )
+    if cfg.steady_detection:
         logger.info("Steady-state detection: ON (will stop after steady + extra time, or at max_time_p)")
     else:
         logger.info("Steady-state detection: OFF (will run until max_time_p only)")
@@ -370,9 +371,9 @@ def run_simulation(**kwargs):
     eta_ref_wall_time = None
     eta_ref_time_p = None
 
-    while current_time_p < max_time_p:
-        if ramp_time_p > 0.0 and current_time_p < ramp_time_p:
-            ramp_factor = 0.5 * (1.0 - math.cos(math.pi * current_time_p / ramp_time_p))
+    while current_time_p < cfg.max_time_p:
+        if cfg.ramp_time_p > 0.0 and current_time_p < cfg.ramp_time_p:
+            ramp_factor = 0.5 * (1.0 - math.cos(math.pi * current_time_p / cfg.ramp_time_p))
         else:
             ramp_factor = 1.0
 
@@ -445,12 +446,14 @@ def run_simulation(**kwargs):
                 if joint_steady and global_steady_time_p is None:
                     global_steady_time_p = current_time_p
                     logger.info(f"[SUCCESS] Flow AND Thermal steady state detected at t = {current_time_p:.3f} s!")
-                    logger.info(f"[INFO] Simulation will continue for another {steady_extra_p:.3f} s to record data.")
+                    logger.info(
+                        f"[INFO] Simulation will continue for another {cfg.steady_extra_p:.3f} s to record data."
+                    )
                 elif (not joint_steady) and global_steady_time_p is not None:
                     logger.info(
                         f"[INFO] Joint steady lost (Developing again) at t = {current_time_p:.3f} s. "
-                        f"ETA target reset to max_time_p = {max_time_p:.3f} s; after next joint steady, "
-                        f"will wait {steady_extra_p:.3f} s again."
+                        f"ETA target reset to max_time_p = {cfg.max_time_p:.3f} s; after next joint steady, "
+                        f"will wait {cfg.steady_extra_p:.3f} s again."
                     )
                     global_steady_time_p = None
 
@@ -458,9 +461,9 @@ def run_simulation(**kwargs):
             else:
                 status_str = "[MaxTime]"
 
-            target_time_p = max_time_p
+            target_time_p = cfg.max_time_p
             if global_steady_time_p is not None:
-                target_time_p = min(max_time_p, global_steady_time_p + steady_extra_p)
+                target_time_p = min(cfg.max_time_p, global_steady_time_p + cfg.steady_extra_p)
 
             rem_time_p = target_time_p - current_time_p
             if eta_ref_wall_time is None or eta_ref_time_p is None:
@@ -494,7 +497,7 @@ def run_simulation(**kwargs):
 
             logger.info(f"Step {step:6d} | t: {current_time_p:.3f}s / {target_time_p:.3f}s | ETA: {eta_str} | {status_str} {monitor_name}")
 
-            if visualization_mode == "realtime":
+            if cfg.visualization_mode == "realtime":
                 accepted = async_vis.submit_snapshot(
                     temp_np=temp_np,
                     v_np=v_np,
@@ -504,7 +507,7 @@ def run_simulation(**kwargs):
                 )
                 if not accepted:
                     logger.debug("Visualization queue full: frame skipped at step=%d", step)
-            elif visualization_mode == "offline":
+            elif cfg.visualization_mode == "offline":
                 snap_path = os.path.join(vis_snapshots_dir, f"step_{step:06d}.npz")
                 np.savez_compressed(
                     snap_path,
@@ -517,8 +520,8 @@ def run_simulation(**kwargs):
 
         if exporter is not None:
             # 指定された時間が経過してから（流れが発達してから）保存を開始
-            if current_time_p >= data_export_start_p:
-                if step % data_export_interval == 0:
+            if current_time_p >= cfg.data_export_start_p:
+                if step % cfg.data_export_interval == 0:
                     exporter.export_snapshot(step, current_time_p)
 
         if vti_enabled and step % cfg.vti_export_interval == 0:
@@ -535,7 +538,7 @@ def run_simulation(**kwargs):
         sim.move_particles(ctx, cfg.particles_inject_per_step)
 
         if global_steady_time_p is not None:
-            if current_time_p - global_steady_time_p >= steady_extra_p:
+            if current_time_p - global_steady_time_p >= cfg.steady_extra_p:
                 logger.info(f"[INFO] Target extra time reached. Stopping simulation gracefully at t = {current_time_p:.3f} s.")
                 break
 
@@ -577,11 +580,11 @@ def run_simulation(**kwargs):
     if export_step is not None:
         logger.info(f" -> Final VTI saved to: {final_vti_path}")
 
-    if visualization_mode == "realtime":
+    if cfg.visualization_mode == "realtime":
         async_vis.close()
         logger.info("Async visualization stats: %s", async_vis.stats())
         logger.info(f"Finished Benchmark: {benchmark}. Saved as {cfg.filename}")
-    elif visualization_mode == "offline":
+    elif cfg.visualization_mode == "offline":
         cell_id_path = os.path.join(vis_snapshots_dir, "cell_id.npy")
         np.save(cell_id_path, cell_id_np_cache)
         vis_meta = {
@@ -624,24 +627,24 @@ def run_simulation(**kwargs):
     except Exception as e:
         logger.error(f"Failed to create zip archive for {out_dir}: {e}")
 
-    if isinstance(paths_out, dict):
-        paths_out["out_dir"] = out_dir
-        paths_out["vti_dir"] = vti_dir
-        paths_out["animation_path"] = cfg.filename
+    if isinstance(cfg.paths_out, dict):
+        cfg.paths_out["out_dir"] = out_dir
+        cfg.paths_out["vti_dir"] = vti_dir
+        cfg.paths_out["animation_path"] = cfg.filename
         if str(cfg.filename).lower().endswith(".gif"):
-            paths_out["gif_path"] = cfg.filename
+            cfg.paths_out["gif_path"] = cfg.filename
         if str(cfg.filename).lower().endswith(".mp4"):
-            paths_out["mp4_path"] = cfg.filename
-        paths_out["visualization_mode"] = visualization_mode
-        if visualization_mode == "offline":
-            paths_out["vis_snapshots_dir"] = vis_snapshots_dir
-        paths_out["npz_path"] = npz_path
-        paths_out["meta_path"] = meta_path
-        paths_out["run_subdir"] = run_subdir
-        paths_out["log_path"] = log_path
-        paths_out["ibm_forces_csv"] = os.path.join(out_dir, "ibm_forces.csv")
+            cfg.paths_out["mp4_path"] = cfg.filename
+        cfg.paths_out["visualization_mode"] = cfg.visualization_mode
+        if cfg.visualization_mode == "offline":
+            cfg.paths_out["vis_snapshots_dir"] = vis_snapshots_dir
+        cfg.paths_out["npz_path"] = npz_path
+        cfg.paths_out["meta_path"] = meta_path
+        cfg.paths_out["run_subdir"] = run_subdir
+        cfg.paths_out["log_path"] = log_path
+        cfg.paths_out["ibm_forces_csv"] = os.path.join(out_dir, "ibm_forces.csv")
 
-    return current_time_p < max_time_p
+    return current_time_p < cfg.max_time_p
 
 
 if __name__ == "__main__":

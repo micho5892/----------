@@ -6,7 +6,7 @@ import taichi as ti
 from main import run_simulation, run_optimize
 from geometry import GeometryBuilder
 import physics
-
+from config import SimConfig, RenderConfig, ParticleConfig
 # =====================================================================
 # 1. モンキーパッチ: カスタム物理モデルを外部から注入できるようにする
 # =====================================================================
@@ -15,8 +15,9 @@ _original_init = physics.PhysicsManager.__init__
 def _patched_init(self, d3q19, cfg):
     _original_init(self, d3q19, cfg)
     # SimConfig に custom_physics_models があれば追加で読み込む
-    if hasattr(cfg, "custom_physics_models"):
-        for model in cfg.custom_physics_models:
+    extras = getattr(cfg, "custom_physics_models", None)
+    if extras:
+        for model in extras:
             self.models.append(model)
 
 physics.PhysicsManager.__init__ = _patched_init
@@ -173,6 +174,10 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         "target_regularization": 1.0,
         "regularization": 1.0e-5,
         "maxiter": 300000,
+        # run_optimize 戻り visualization 用（最適化制約には使わない）
+        "target_video_fps": 60.0,
+        "max_time_p": 10.0,
+        "vti_vis_interval_multiplier": 5,
     }
 
     print(f"\n--- Optimizing parameters for {case_name} ---")
@@ -180,7 +185,8 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     if not result["success"]:
         print(f"[ERROR] {case_name}: パラメータ最適化に失敗")
         return None, None
-        
+
+    vis = result.get("visualization") or {}
     state = result["state"]
     nu_w = state["nu"]
     k_w = state["k_f"]
@@ -210,53 +216,61 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     # 熱拡散のみの場合の緩和時間 t_c を基準に、対流による冷却が完了する時間を設定
     t_c = (L_eff**2) / alpha_w
     max_time_p = t_c * 0.8 
-    max_time_p = 10.0
+    max_time_p = 10.0 # デバッグ用に10秒に固定
     print(f"[{case_name}] Running up to {max_time_p:.3f} s")
     
     artifact_parent = os.path.join("results", "mpemba_effect")
-    paths_out = {}
-    
-    run_simulation(
-        benchmark="mpemba",
+    paths_out: dict = {}
+
+    _vti = vis.get("vti_export_interval")
+    _fps = vis.get("target_video_fps")
+    render_cfg = RenderConfig(
+        output_format="mp4",
+        vti_export_interval=1000 if _vti is None else int(_vti),
+        target_video_fps=60.0 if _fps is None else float(_fps),
+    )
+    particle_cfg = ParticleConfig(
+        n_particles=0,
+        particles_inject_per_step=0,
+    )
+
+    cfg = SimConfig(
+        benchmark_name="mpemba",
         fp_dtype="float32",
         steady_detection=False,
         state=state,
         artifact_parent=artifact_parent,
         paths_out=paths_out,
-        filename=os.path.join(artifact_parent, f"{case_name}.mp4"),
-        
-        nx=nx, ny=ny, nz=nz,
+        nx=nx,
+        ny=ny,
+        nz=nz,
         Lx_p=L_domain,
         periodic_y=True,
-        U_inlet_p=state["U"], 
-        u_lbm=state["u_lbm"],    
-        output_format="mp4",
-
-        visualization_mode="offline", # アニメーションを生成
-        target_video_fps=60,
+        U_inlet_p=state["U"],
+        u_lbm_inlet=float(state["u_lbm"]),
+        visualization_mode="none",
         max_time_p=max_time_p,
         ramp_time_p=0.0,
-        vti_export_interval=0, 
-        particles_inject_per_step=0,
         sponge_thickness=0.0,
-        
-        # IDごとの物性を割り当て
         domain_properties={
             0: {"nu": nu_a, "k": k_a, "rho": rho_a, "Cp": Cp_a},
             1: {"nu": nu_w, "k": k_w, "rho": rho_w, "Cp": Cp_w},
-            2: {"nu": 0.0,  "k": k_cup, "rho": rho_cup, "Cp": Cp_cup},
-            10: {"nu": 0.0, "k": k_w, "rho": rho_w, "Cp": Cp_w}, 
+            2: {"nu": 0.0, "k": k_cup, "rho": rho_cup, "Cp": Cp_cup},
+            10: {"nu": 0.0, "k": k_w, "rho": rho_w, "Cp": Cp_w},
         },
         physics_models={
-            "boussinesq": {"g_vec":[0.0, 0.0, -g_phys], "beta": beta_p, "T_ref": 0.0}
+            "boussinesq": {"g_vec": [0.0, 0.0, -g_phys], "beta": beta_p, "T_ref": 0.0}
         },
         boundary_conditions={
             10: {"type": "isothermal_wall", "temperature": 0.0},
+            2: {"type": "cht_solid"},
             21: {"type": "outlet"},
         },
-        # 先ほど仕込んだプラグインハックを利用してモニターを注入
-        custom_physics_models=[monitor]
+        custom_physics_models=[monitor],
+        render=render_cfg,
+        particles=particle_cfg,
     )
+    run_simulation(cfg)
     
     return np.array(monitor.time_history), np.array(monitor.history)
 

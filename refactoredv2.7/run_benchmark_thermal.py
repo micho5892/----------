@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
 # シミュレータ本体からのインポート
+from config import SimConfig, RenderConfig, ParticleConfig
 from main import run_simulation, run_optimize
 from lbm_logger import get_logger
 
@@ -251,53 +252,46 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
     print(f">>> Optimized Thermal Time Scale t_c = {t_c:.3f} s.")
     print(f">>> Running simulation up to 5 t_c = {max_time_p:.3f} s to guarantee steady state.")
     
-    paths_out = {}
+    paths_out: dict = {}
     artifact_parent = os.path.join("results", "validation_thermal")
-    
-    run_simulation(
-        benchmark="thermal_cavity",
+
+    cfg = SimConfig(
+        benchmark_name="thermal_cavity",
         fp_dtype="float32",
-        steady_detection=False,       
+        steady_detection=False,
         state=state,
         artifact_parent=artifact_parent,
         paths_out=paths_out,
-        
-        nx=nx, ny=ny, nz=nz,
+        nx=nx,
+        ny=ny,
+        nz=nz,
         Lx_p=L_domain,
         periodic_y=True,
-        U_inlet_p=state["U"], 
-        u_lbm=state["u_lbm"],    
-        output_format="mp4",
-        visualization_mode="offline",
+        U_inlet_p=state["U"],
+        visualization_mode="none",
         target_video_fps=60,
-        
-        max_time_p=max_time_p, 
-        # max_time_p=3, 
+        max_time_p=max_time_p,
         ramp_time_p=0.0,
-        
-        # vis_interval=200, 
-        vti_export_interval=0, particles_inject_per_step=0,
         sponge_thickness=0.0,
-        
         domain_properties={
-            0:  {"nu": nu_p, "k": k_p, "rho": rho_p, "Cp": Cp_p},
-            10: {"nu": 0.0,  "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
-            11: {"nu": 0.0,  "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
-            21: {"nu": 0.0,  "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
+            0: {"nu": nu_p, "k": k_p, "rho": rho_p, "Cp": Cp_p},
+            10: {"nu": 0.0, "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
+            11: {"nu": 0.0, "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
+            21: {"nu": 0.0, "k": state["k_s"], "rho": state["rho_s"], "Cp": state["Cp_s"]},
         },
-        
         physics_models={
-            "boussinesq": {"g_vec":[0.0, 0.0, -g_phys], "beta": beta_p, "T_ref": 0.5}
+            "boussinesq": {"g_vec": [0.0, 0.0, -g_phys], "beta": beta_p, "T_ref": 0.5}
         },
-        
         boundary_conditions={
             11: {"type": "isothermal_wall", "temperature": 1.0},
             10: {"type": "isothermal_wall", "temperature": 0.0},
             21: {"type": "adiabatic_wall"},
-            # ★ SimConfig のバグ(強制Uを上書きしてしまう仕様)を回避するダミー (領域外なので無害)
-            99: {"type": "inlet", "velocity": [state["u_lbm"], 0.0, 0.0], "temperature": 0.0}
-        }
+            99: {"type": "inlet", "velocity": [state["u_lbm"], 0.0, 0.0], "temperature": 0.0},
+        },
+        render={"output_format": "mp4", "vti_export_interval": 0},
+        particles={"particles_inject_per_step": 0},
     )
+    run_simulation(cfg)
 
     out_dir = paths_out.get("out_dir")
     npz_path = paths_out.get("npz_path")

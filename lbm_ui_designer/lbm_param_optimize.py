@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -150,6 +151,59 @@ def state_satisfies_ranges(st: dict, ranges: dict) -> bool:
     return all(_value_in_range(float(st[name]), lo, hi) for name, (lo, hi) in ranges.items())
 
 
+def visualization_report_from_state(st: dict, cfg: dict) -> dict:
+    """
+    最適化後の state（dt 等）と YAML 任意項目から、可視化・ステップ数の参考値をまとめる。
+    refactoredv2.7/main.py と同じく target_video_fps 指定時は
+    vis_interval = max(1, round(1 / (fps * dt)))。
+
+    cfg で任意に渡せるキー:
+        target_video_fps: 目標動画 FPS（指定時のみ vis_interval を計算）
+        max_time_p: シミュレーション終了時間 [s]（指定時のみ estimated_total_steps を計算）
+        vti_vis_interval_multiplier: int。0 で vti_export_interval=0、N>0 で N * vis_interval。
+            未指定なら vti_export_interval は null（計算しない）。
+    """
+    dt = float(st.get("dt") or 0.0)
+    rep: dict = {}
+    rep["dt"] = dt if dt > 0 else None
+
+    target_fps = None
+    vis_interval = None
+    raw_fps = cfg.get("target_video_fps")
+    if raw_fps is not None and str(raw_fps).strip() != "" and dt > 0:
+        target_fps = max(1.0, float(raw_fps))
+        vis_interval = max(1, int(round(1.0 / (target_fps * dt))))
+    rep["target_video_fps"] = target_fps
+    rep["vis_interval"] = vis_interval
+
+    max_time_p = None
+    n_steps = None
+    raw_mtp = cfg.get("max_time_p")
+    if raw_mtp is not None and str(raw_mtp).strip() != "" and dt > 0:
+        max_time_p = float(raw_mtp)
+        n_steps = int(math.ceil(max_time_p / dt))
+    rep["max_time_p"] = max_time_p
+    rep["estimated_total_steps"] = n_steps
+
+    est_frames = None
+    if n_steps is not None and vis_interval is not None and vis_interval > 0:
+        est_frames = max(0, n_steps // vis_interval)
+    rep["estimated_animation_frames"] = est_frames
+
+    if "vti_vis_interval_multiplier" in cfg:
+        mult = int(cfg["vti_vis_interval_multiplier"])
+        if mult <= 0:
+            rep["vti_export_interval"] = 0
+        elif vis_interval is not None:
+            rep["vti_export_interval"] = max(1, vis_interval * mult)
+        else:
+            rep["vti_export_interval"] = None
+    else:
+        rep["vti_export_interval"] = None
+
+    return rep
+
+
 def build_primary_vector(free_keys, theta, fixed: dict, template: dict) -> dict:
     p = dict(template)
     p.update(fixed)
@@ -159,6 +213,14 @@ def build_primary_vector(free_keys, theta, fixed: dict, template: dict) -> dict:
 
 
 def run_optimize(cfg: dict) -> dict:
+    """
+    戻り値 dict には最終的に ``visualization`` キーが付く（state の dt と cfg の任意項目から参照用）。
+
+    YAML / cfg で任意指定:
+        - target_video_fps: vis_interval を main.py と同式で算出
+        - max_time_p: estimated_total_steps = ceil(max_time_p / dt)
+        - vti_vis_interval_multiplier: vis_interval が分かるとき vti を N 倍ステップごと（0 で無効）
+    """
     primary0 = default_primary_from_coolprop(cfg)
     fixed_spec, ranges = parse_fixed_ranges(cfg)
     fixed = resolve_fixed_to_values(fixed_spec, primary0)
@@ -329,6 +391,7 @@ def run_optimize(cfg: dict) -> dict:
             "meta": meta,
             "range_report": range_report_fixed,
             "equation_conflicts": conflicts,
+            "visualization": visualization_report_from_state(st, cfg),
         }
 
     res = minimize(
@@ -371,6 +434,7 @@ def run_optimize(cfg: dict) -> dict:
         "meta": meta,
         "range_report": range_report,
         "equation_conflicts": conflicts_f,
+        "visualization": visualization_report_from_state(st_f, cfg),
     }
 
 

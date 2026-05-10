@@ -283,6 +283,10 @@ class BoundaryManager:
             elif bc_type == "adiabatic_wall":
                 pass
 
+            elif bc_type == "cht_solid":
+                # 物性フラグのみ get_materials_dict で処理。ここではマクロ境界を追加しない。
+                pass
+
         _log.debug(
             "BoundaryManager: before_macro=%s, after_macro=%s",
             len(self.before_macro_bcs),

@@ -40,7 +40,8 @@ class Analytics:
         is_fluid_np = np.zeros(max_cid + 1, dtype=np.int32)
 
         materials_dict = cfg.get_materials_dict()
-        for cid, (_, _, is_fluid_flag) in materials_dict.items():
+        for cid, row in materials_dict.items():
+            is_fluid_flag = row[2]
             is_fluid_np[int(cid)] = int(is_fluid_flag)
 
         for cid, props in cfg.domain_properties.items():
