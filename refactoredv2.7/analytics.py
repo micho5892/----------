@@ -26,7 +26,14 @@ class Analytics:
         self.nu_k_ref_mode = int(nu_model.k_ref_mode)
         max_cid = 255
         if cfg.domain_properties:
-            max_cid = max(max_cid, max(int(cid) for cid in cfg.domain_properties.keys()))
+            id_ints = []
+            for k in cfg.domain_properties.keys():
+                try:
+                    id_ints.append(int(k))
+                except (TypeError, ValueError):
+                    continue
+            if id_ints:
+                max_cid = max(max_cid, max(id_ints))
         self.k_table = ti.field(dtype=ti.f32, shape=max_cid + 1)
         self.rho_table = ti.field(dtype=ti.f32, shape=max_cid + 1)
         self.cp_table = ti.field(dtype=ti.f32, shape=max_cid + 1)
@@ -40,15 +47,27 @@ class Analytics:
         is_fluid_np = np.zeros(max_cid + 1, dtype=np.int32)
 
         materials_dict = cfg.get_materials_dict()
-        for cid, row in materials_dict.items():
+        for cid_raw, row in materials_dict.items():
+            try:
+                cid = int(cid_raw)
+            except (TypeError, ValueError):
+                continue
+            if not (0 <= cid <= max_cid):
+                continue
             is_fluid_flag = row[2]
-            is_fluid_np[int(cid)] = int(is_fluid_flag)
+            is_fluid_np[cid] = int(is_fluid_flag)
 
-        for cid, props in cfg.domain_properties.items():
-            k_np[int(cid)] = float(props.get("k", 0.6))
-            rho_np[int(cid)] = float(props.get("rho", 1000.0))
-            cp_np[int(cid)] = float(props.get("Cp", 4180.0))
-            nu_np[int(cid)] = float(props.get("nu", 1.0e-5))
+        for cid_raw, props in cfg.domain_properties.items():
+            try:
+                cid = int(cid_raw)
+            except (TypeError, ValueError):
+                continue
+            if not (0 <= cid <= max_cid):
+                continue
+            k_np[cid] = float(props.get("k", 0.6))
+            rho_np[cid] = float(props.get("rho", 1000.0))
+            cp_np[cid] = float(props.get("Cp", 4180.0))
+            nu_np[cid] = float(props.get("nu", 1.0e-5))
 
         self.k_table.from_numpy(k_np)
         self.rho_table.from_numpy(rho_np)

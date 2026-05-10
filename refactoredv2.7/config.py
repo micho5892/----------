@@ -469,9 +469,27 @@ class SimConfig(BaseModel):
         is_solid_cht==1 は **boundary_conditions で type=="cht_solid" と明示された ID のみ**
         （暗黙に「nu=0 ならすべて CHT」とはしない）。
         """
-        mat_dict: Dict[Any, Tuple[Any, Any, Any, Any]] = {}
+        mat_dict: Dict[int, Tuple[Any, Any, Any, Any]] = {}
+        bc = self.boundary_conditions or {}
 
-        for cid, props in self.domain_properties.items():
+        def _bc_spec_for_cell(cid_int: int):
+            if cid_int in bc:
+                return bc[cid_int]
+            ks = str(cid_int)
+            if ks in bc:
+                return bc[ks]
+            return None
+
+        for cid_raw, props in self.domain_properties.items():
+            try:
+                cid = int(cid_raw)
+            except (TypeError, ValueError):
+                log.warning(
+                    "get_materials_dict: domain_properties のキー %r を int にできないためスキップ",
+                    cid_raw,
+                )
+                continue
+
             nu = props.get("nu", 1.0e-5)
             k_val = props.get("k", 0.6)
             rho = props.get("rho", 1000.0)
@@ -487,8 +505,8 @@ class SimConfig(BaseModel):
             is_fluid_flag = 0 if nu <= 1e-12 else 1
             is_solid_cht = 0
 
-            if cid in self.boundary_conditions:
-                bc_spec = self.boundary_conditions[cid]
+            bc_spec = _bc_spec_for_cell(cid)
+            if bc_spec is not None:
                 bc_type = str(bc_spec.get("type", "") if bc_spec else "")
                 if bc_type == "cht_solid":
                     is_fluid_flag = 0

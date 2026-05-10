@@ -103,7 +103,15 @@ class SimulationContext:
 
     def set_materials(self, materials_dict):
         """タスク7: ID → (tau_f, tau_g, is_fluid, is_solid_cht) をテーブルに反映する。"""
-        for cid, row in materials_dict.items():
+        for cid_raw, row in materials_dict.items():
+            try:
+                cid = int(cid_raw)
+            except (TypeError, ValueError):
+                log.warning(
+                    "set_materials: セルIDキー %r を int にできないためスキップ",
+                    cid_raw,
+                )
+                continue
             if 0 <= cid < MAX_CELL_ID:
                 tau_f, tau_g, is_fluid_flag = row[0], row[1], row[2]
                 is_solid_cht = row[3] if len(row) > 3 else 0
