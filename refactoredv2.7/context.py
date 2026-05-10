@@ -33,7 +33,8 @@ class SimulationContext:
         self.ny = ny
         self.nz = nz
         self.n_particles = n_particles
-
+        # Taichi の dense 形状は各次元が正である必要がある。n_particles==0 でもダミー 1 スロットを確保する。
+        self._particle_field_len = max(1, int(n_particles))
 
         self.cell_id = ti.field(dtype=ti.i32)
         self.sdf = ti.field(dtype=fp_dtype)
@@ -61,12 +62,15 @@ class SimulationContext:
         # ▼ 追加：流体か固体かを判定するフラグテーブル (0:固体, 1:流体)
         self.is_fluid_table = ti.field(ti.i32, shape=MAX_CELL_ID)
 
+        # 共役熱伝達（CHT）: 物性だけの熱伝導固体。温度 g を流体と同様に計算する対象。
+        self.is_solid_cht_table = ti.field(ti.i32, shape=MAX_CELL_ID)
+
         # 温度 g の移流: 固体かつ等温壁のみ ABB（Tw は boundary_conditions 由来）
         # g_wall_use_abb[cid]==1 のとき g_wall_tw[cid] を壁温度として使用。0 のときは BB（断熱相当）。
         self.g_wall_use_abb = ti.field(ti.i32, shape=MAX_CELL_ID)
         self.g_wall_tw = ti.field(dtype=fp_dtype, shape=MAX_CELL_ID)
         
-        self.particle_pos = ti.Vector.field(3, fp_dtype, shape=n_particles)
+        self.particle_pos = ti.Vector.field(3, fp_dtype, shape=self._particle_field_len)
         self.img = ti.field(fp_dtype, shape=(nx * 2, ny))
         self.inject_count = ti.field(ti.i32, shape=())
 
@@ -93,16 +97,20 @@ class SimulationContext:
         import numpy as np
         z = np.zeros(MAX_CELL_ID, dtype=np.int32)
         self.g_wall_use_abb.from_numpy(z)
+        self.is_solid_cht_table.from_numpy(z)
         zf = np.zeros(MAX_CELL_ID, dtype=np.float32)
         self.g_wall_tw.from_numpy(zf)
 
     def set_materials(self, materials_dict):
-        """タスク7: ID → (tau_f, tau_g) のマッピングをテーブルに反映する。"""
-        for cid, (tau_f, tau_g, is_fluid_flag) in materials_dict.items():
+        """タスク7: ID → (tau_f, tau_g, is_fluid, is_solid_cht) をテーブルに反映する。"""
+        for cid, row in materials_dict.items():
             if 0 <= cid < MAX_CELL_ID:
+                tau_f, tau_g, is_fluid_flag = row[0], row[1], row[2]
+                is_solid_cht = row[3] if len(row) > 3 else 0
                 self.tau_f_table[cid] = tau_f
                 self.tau_g_table[cid] = tau_g
-                self.is_fluid_table[cid] = is_fluid_flag # ★追加
+                self.is_fluid_table[cid] = is_fluid_flag
+                self.is_solid_cht_table[cid] = is_solid_cht
 
     def set_g_thermal_wall_tables_from_config(self, sim_config):
         """boundary_conditions の isothermal_wall に合わせて g 移流用 ABB テーブルを設定する。"""

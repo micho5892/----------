@@ -30,7 +30,12 @@ class LBMSimulator:
     @ti.func
     def is_fluid(self, ctx: ti.template(), cid):
         return ctx.is_fluid_table[cid] == 1
-    
+
+    @ti.func
+    def is_thermal_active(self, ctx: ti.template(), cid):
+        """流体、または共役熱伝達（CHT）固体なら温度 g を移流・緩和する。"""
+        return ctx.is_fluid_table[cid] == 1 or ctx.is_solid_cht_table[cid] == 1
+
     @ti.kernel
     def init_fields(self, ctx: ti.template()):
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
@@ -57,7 +62,7 @@ class LBMSimulator:
                 ctx.f_old[i, j, k, d] = self.d3q19.get_feq(1.0, ctx.v[i, j, k], d)
                 ctx.g_old[i, j, k, d] = self.d3q19.get_geq(ctx.temp[i, j, k], ctx.v[i, j, k], d)
                 
-        for n in range(ctx.particle_pos.shape[0]):
+        for n in range(self.cfg.n_particles):
             ctx.particle_pos[n] = ti.Vector([ti.random() * ctx.nx, ti.random() * ctx.ny, ti.random() * ctx.nz])
 
     @ti.kernel
@@ -70,26 +75,26 @@ class LBMSimulator:
             cid = ctx.cell_id[i, j, k]
             
             # ==========================================================
-            # 1. 温度場 g の緩和と移流 (統合)
+            # 1. 温度場 g の緩和と移流（流体 & CHT 固体。IBM 界面は流体側で φ ブレンド）
             # ==========================================================
-            if self.is_fluid(ctx, cid):
-                # フェーズ2: φを使って界面の熱拡散率(=tau_g)を連続化
-                phi_val = ctx.phi[i, j, k]
-                tau_g_fluid = ctx.tau_g_table[FLUID_A]
-                tau_g_solid = ctx.tau_g_table[SOLID]
-                denom_tau = phi_val * tau_g_fluid + (1.0 - phi_val) * tau_g_solid
-                tau_g = (tau_g_fluid * tau_g_solid) / (denom_tau + 1e-12)
+            if self.is_thermal_active(ctx, cid):
+                if self.is_fluid(ctx, cid):
+                    phi_val = ctx.phi[i, j, k]
+                    tau_g_fluid = ctx.tau_g_table[cid]
+                    tau_g_solid = ctx.tau_g_table[SOLID]
+                    denom_tau = phi_val * tau_g_fluid + (1.0 - phi_val) * tau_g_solid
+                    tau_g = (tau_g_fluid * tau_g_solid) / (denom_tau + 1e-12)
+                else:
+                    tau_g = ctx.tau_g_table[cid]
                 omega_g = 1.0 / tau_g
                 v_g = ctx.v[i, j, k] if self.is_fluid(ctx, cid) else ti.Vector([0.0, 0.0, 0.0])
                 temp = ctx.temp[i, j, k]
-                
+
                 for d in ti.static(range(19)):
                     geq = self.d3q19.get_geq(temp, v_g, d)
-                    
-                    # 計算した直後の値をローカル変数に持つ（g_postの代わり）
                     S_g_term = (1.0 - 0.5 * omega_g) * self.d3q19.w[d] * ctx.S_g[i, j, k]
                     g_curr = ctx.g_old[i, j, k, d] - omega_g * (ctx.g_old[i, j, k, d] - geq) + S_g_term
-                    
+
                     ip = i + self.d3q19.e[d][0]
                     jp = j + self.d3q19.e[d][1]
                     kp = k + self.d3q19.e[d][2]
@@ -108,11 +113,10 @@ class LBMSimulator:
 
                     if is_inside:
                         neighbor_cid = ctx.cell_id[ip, jp, kp]
-                        if self.is_fluid(ctx, neighbor_cid):
+                        if self.is_thermal_active(ctx, neighbor_cid):
                             ctx.g_new[ip, jp, kp, d] = g_curr
                         else:
                             inv_d = self.d3q19.inv_d[d]
-                            # 固体: boundary_conditions の isothermal_wall なら ABB で Tw を課す。それ以外は BB。
                             if ctx.g_wall_use_abb[neighbor_cid] != 0:
                                 Tw = ctx.g_wall_tw[neighbor_cid]
                                 ctx.g_new[i, j, k, inv_d] = -g_curr + 2.0 * self.d3q19.w[d] * Tw
@@ -121,9 +125,9 @@ class LBMSimulator:
                     else:
                         inv_d = self.d3q19.inv_d[d]
                         ctx.g_new[i, j, k, inv_d] = g_curr
-                
+
             # ==========================================================
-            # 2. 速度場 f の緩和と移流 (統合)
+            # 2. 速度場 f の緩和と移流（流体のみ）
             # ==========================================================
             if self.is_fluid(ctx, cid):
                 rho = ctx.rho[i, j, k]
@@ -289,75 +293,52 @@ class LBMSimulator:
     def update_macro(self, ctx: ti.template()):
         for i, j, k in ti.ndrange(ctx.nx, ctx.ny, ctx.nz):
             cid = ctx.cell_id[i, j, k]
-            phi_val = ctx.phi[i, j, k]
 
-            if phi_val > 0.99:
-                u_solid = ti.Vector([0.0, 0.0, 0.0])
-                ctx.v[i, j, k] = u_solid 
-                
-                # ★追加：固体内部の温度を固定（等温円柱の温度）
-                # ※本来はオブジェクトの temperature プロパティを参照しますが、
-                # カルマン渦の検証用として一旦 1.0 に固定します。
-                ctx.temp[i, j, k] = 1.0
-            
             if self.is_fluid(ctx, cid):
-                new_temp = 0.0
                 new_rho = 0.0
                 new_v = ti.Vector([0.0, 0.0, 0.0])
-                
                 for d in ti.static(range(19)):
-                    # g と f の更新をまとめる
-                    g_val = ctx.g_new[i, j, k, d]
-                    new_temp += g_val
-                    ctx.g_old[i, j, k, d] = g_val
-                    
                     f_val = ctx.f_new[i, j, k, d]
                     new_rho += f_val
                     new_v += f_val * self.d3q19.e[d]
                     ctx.f_old[i, j, k, d] = f_val
-                
-                ctx.temp[i, j, k] = new_temp
                 ctx.rho[i, j, k] = new_rho
                 if new_rho > 1e-12:
                     ctx.v[i, j, k] = new_v / new_rho
                 else:
                     ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
-
-                # フェーズ1: 体積ペナルティ法(VPM)で固体内部速度を剛体速度に拘束
-                phi_val = ctx.phi[i, j, k]
-                if phi_val > 0.0:
+                phi_vpm = ctx.phi[i, j, k]
+                if phi_vpm > 0.0:
                     u_solid = ctx.u_solid[i, j, k]
-                    ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
+                    ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_vpm) + u_solid * phi_vpm
             else:
-                # 固体セルはゼロ(または壁温度)固定
                 ctx.rho[i, j, k] = 1.0
                 ctx.v[i, j, k] = ti.Vector([0.0, 0.0, 0.0])
+
+            if self.is_thermal_active(ctx, cid):
+                new_temp = 0.0
+                for d in ti.static(range(19)):
+                    g_val = ctx.g_new[i, j, k, d]
+                    new_temp += g_val
+                    ctx.g_old[i, j, k, d] = g_val
+                ctx.temp[i, j, k] = new_temp
+            else:
                 if ctx.g_wall_use_abb[cid] != 0:
                     ctx.temp[i, j, k] = ctx.g_wall_tw[cid]
                 else:
                     ctx.temp[i, j, k] = 0.0
 
             phi_val = ctx.phi[i, j, k]
-            
-            # フェーズ1: 体積ペナルティ法(VPM)で固体境界〜内部の速度を剛体速度に拘束
-            if phi_val > 0.0:
-                u_solid = ti.Vector([0.0, 0.0, 0.0]) # 円柱は静止
-                ctx.v[i, j, k] = ctx.v[i, j, k] * (1.0 - phi_val) + u_solid * phi_val
-
-            # 固体内部 (完全に内側) は温度も速度も完全に強制固定する
             if phi_val > 0.99:
                 u_solid = ti.Vector([0.0, 0.0, 0.0])
-                ctx.v[i, j, k] = u_solid 
-                # ★追加：固体内部の温度を固定（等温円柱の温度）
-                # ※本来はオブジェクトの temperature プロパティを参照しますが、
-                # カルマン渦の検証用として一旦 1.0 に固定します。
-                ctx.temp[i, j, k] = 1.0  # T=1.0の等温円柱
+                ctx.v[i, j, k] = u_solid
+                ctx.temp[i, j, k] = 1.0
 
     @ti.kernel
     def move_particles(self, ctx: ti.template(), inject_per_step: ti.i32):
         # 入口は z = nz-1、出口は z = 0。出た粒子はリサイクルせず、毎ステップ一定数だけ入口で新規生成する。
         ctx.inject_count[None] = 0
-        for n in range(ctx.particle_pos.shape[0]):
+        for n in range(self.cfg.n_particles):
             pos = ctx.particle_pos[n]
             i, j, k = int(pos[0]), int(pos[1]), int(pos[2])
 

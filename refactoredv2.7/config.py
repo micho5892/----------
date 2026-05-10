@@ -88,14 +88,91 @@ class SimConfig(BaseModel):
 
 
     # キーはセル ID で int のことが多い（従来コード・ベンチスクリプト互換）。str も許容。
-    boundary_conditions: Dict[Union[str, int], Any] = Field(default_factory=dict)
-    """境界条件"""
-    physics_models: Dict[Union[str, int], Any] = Field(default_factory=dict)
-    """物理モデル"""
     domain_properties: Dict[Union[str, int], Any] = Field(default_factory=dict)
-    """物性"""
+    """
+    領域（セルID）ごとに独立した物性値を定義する辞書。
+    
+    【キー】
+        セルID (int): 0(流体), 10(固体) など。
+    【指定可能な値と機能】
+        - nu  (float): 動粘性係数 [m^2/s]。流体の粘り気。
+                       ※ `nu` を 0.0（または 1e-12 以下）に設定すると、そのIDの領域は
+                       「固体（流速ゼロ）」として扱われます。
+        - k   (float): 熱伝導率 [W/(m K)]。熱の伝わりやすさ。
+        - rho (float): 密度[kg/m^3]。
+        - Cp  (float): 比熱 [J/(kg K)]。
+        
+    例:
+    ```python
+    {
+        0: {"nu": 1.0e-5, "k": 0.6, "rho": 1000.0, "Cp": 4180.0}, # 流体(水)
+        10: {"nu": 0.0, "k": 400.0, "rho": 8960.0, "Cp": 385.0}   # 固体(銅)
+    }
+    ```
+    """
+
+    physics_models: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    """
+    シミュレーションに追加する「物理モデル（外力や相変化など）」を定義する辞書。
+    
+    【有効なキーと機能】
+        - "boussinesq" : ブシネスク近似（自然対流・浮力モデル）
+            [引数] `g_vec` (重力ベクトル), `beta` (体膨張係数), `T_ref` (参照温度)
+            [機能] 温度差によって生じる浮力（熱対流）を計算します。
+            
+        - "immersed_boundary" : 埋め込み境界法（IBM）
+            [引数] `objects` (形状や位置、質量のリスト), `phase1_epsilon_lbm` など
+            [機能] 流体中を移動・回転する障害物や、プロペラなどの流体構造連成（FSI）を計算します。
+            
+        - "shan_chen" : Shan-Chen 多相流モデル
+            [引数] `G_target` (引力の強さ) など
+            [機能] 粒子間の引力を計算し、気液分離（水と空気など）を表現します。
+            
+    例:
+    ```python
+    {
+        "boussinesq": {"g_vec":[0.0, 0.0, -9.81], "beta": 2.1e-4, "T_ref": 0.0}
+    }
+    ```
+    """
+
+    boundary_conditions: Dict[Union[str, int], Any] = Field(default_factory=dict)
+    """
+    特定のセルIDに対する境界条件（壁、入口、出口など）を定義する辞書。何も指定しない場合は共役熱伝達として扱う。
+    
+    【キー】
+        セルID (int): 適用したい領域のID（例: 20=入口, 21=出口, 10=壁）
+    【有効な "type" と機能】
+        - "inlet" : 流入境界（ディリクレ）
+            [機能] 指定した速度と温度で流体を強制的に押し込みます。
+            [追加引数] `velocity` (リスト), `temperature` (float)
+            
+        - "outlet" : 流出境界（ノイマン/圧力固定）
+            [機能] 流体を外に逃がします。逆流しようとした場合は速度をゼロに制限します。
+            
+        - "isothermal_wall" : 等温壁
+            [機能] 壁の温度を一定に保ちます（熱源または冷却源）。
+            [追加引数] `temperature` (float)
+            
+        - "constant_heat_flux" : 定熱流束壁
+            [機能] 一定のペースで熱を与え（奪い）続けます。
+            [追加引数] `q` (float)
+            
+        - "adiabatic_wall" : 断熱壁
+            [機能] 熱を通さない（勾配ゼロ）壁として扱います。
+            
+    例:
+    ```python
+    {
+        20: {"type": "inlet", "velocity": [0.1, 0.0, 0.0], "temperature": 1.0},
+        21: {"type": "outlet"},
+        10: {"type": "isothermal_wall", "temperature": 0.0}
+    }
+    ```
+    """
 
     U_inlet_p: float = Field(1.0, description="代表物理流速")
+    """代表物理流速"""
     u_lbm_inlet: float = Field(0.1, description="LBM単位での代表流速（inlet から自動上書き可）")
 
     periodic_x: bool = Field(False)
@@ -161,7 +238,7 @@ class SimConfig(BaseModel):
 
     state: Dict[str, Any] = Field(default_factory=dict, description="状態維持用の辞書")
     artifact_parent: Optional[str] = Field(None, description="結果を出力する親ディレクトリ（run_subdir 配下を作成）")
-    paths_out: Optional[Dict[str, Any]] = Field(None, description="パス結果を呼び出し元に返すミュータブル辞書")
+    paths_out: Optional[Dict[str, Any]] = Field({}, description="パス結果を呼び出し元に返すミュータブル辞書")
     vti_dir: Optional[str] = Field(None, description="明示的な VTI 出力ディレクトリ（未指定時は <out>/vti）")
 
     flow_type: str = Field("counter", description="熱交換器などでの向き（例: counter / co-current）。geometry が参照する場合用")
@@ -366,8 +443,13 @@ class SimConfig(BaseModel):
         return 0.5 * (1.0 + math.cos(math.pi * t / dur))
 
     def get_materials_dict(self):
-        """設定された各IDの物性から、独立して tau_f, tau_g を計算してテーブルに登録する"""
-        mat_dict: Dict[Any, Tuple[Any, Any, Any]] = {}
+        """設定された各IDの物性から、独立して tau_f, tau_g を計算してテーブルに登録する。
+
+        戻り値は (tau_f, tau_g, is_fluid_flag, is_solid_cht)。
+        is_solid_cht==1 の固体は共役熱伝達（CHT）として温度 LBM を流体と同様に移流・緩和する。
+        boundary_conditions で type に 'wall' を含む境界 ID は CHT 対象外（等温・断熱壁など）。
+        """
+        mat_dict: Dict[Any, Tuple[Any, Any, Any, Any]] = {}
 
         for cid, props in self.domain_properties.items():
             nu = props.get("nu", 1.0e-5)
@@ -383,12 +465,14 @@ class SimConfig(BaseModel):
             tau_g = 3.0 * alpha_lbm + 0.5
 
             is_fluid_flag = 0 if nu <= 1e-12 else 1
+            is_solid_cht = 1 if is_fluid_flag == 0 else 0
 
             if cid in self.boundary_conditions:
                 bc_type = self.boundary_conditions[cid].get("type", "")
                 if "wall" in bc_type:
                     is_fluid_flag = 0
+                    is_solid_cht = 0
 
-            mat_dict[cid] = (tau_f, tau_g, is_fluid_flag)
+            mat_dict[cid] = (tau_f, tau_g, is_fluid_flag, is_solid_cht)
 
         return mat_dict
