@@ -106,8 +106,9 @@ def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_eff, alpha_f,
     sim_Z_Numin = z_dense[np.argmin(Nu_dense)]
     
     # --- 結果出力 ---
-    ref = DE_VAHL_DAVIS_DATA.get(target_Ra)
+    ref = DE_VAHL_DAVIS_DATA.get(int(target_Ra))
     print(f"\n=== Benchmark Results (Ra = {target_Ra:.1e}) ===")
+    print(ref)
     if ref:
         _log.info(f"| Metric                     | LBM (Present) | de Vahl Davis | Error (%) |")
         _log.info(f"|----------------------------|---------------|---------------|-----------|")
@@ -123,6 +124,21 @@ def analyze_and_plot_thermal_cavity(npz_path, nx, nz, target_Ra, L_eff, alpha_f,
         _log.info(f"| Z location of Max Nu       | {sim_Z_Numax:13.3f} | {ref['Z_Numax']:13.3f} | {abs(sim_Z_Numax-ref['Z_Numax'])/ref['Z_Numax']*100:8.2f}% |")
         _log.info(f"| Min Nu (Boundary X=0)      | {sim_Nu_min:13.3f} | {ref['Nu_min']:13.3f} | {abs(sim_Nu_min-ref['Nu_min'])/ref['Nu_min']*100:8.2f}% |")
         _log.info(f"| Z location of Min Nu       | {sim_Z_Numin:13.3f} | {ref['Z_Numin']:13.3f} | {abs(sim_Z_Numin-ref['Z_Numin'])/ref['Z_Numin']*100:8.2f}% |")
+        print("="*60)
+        print(f"| Metric                     | LBM (Present) | de Vahl Davis | Error (%) |")
+        print(f"|----------------------------|---------------|---------------|-----------|")
+        print(f"| Max U-vel (Local Pe_x)     | {sim_U_max:13.3f} | {ref['U_max']:13.3f} | {abs(sim_U_max-ref['U_max'])/ref['U_max']*100:8.2f}% |")
+        print(f"| Z location of Max U-vel    | {sim_Z_Umax:13.3f} | {ref['Z_Umax']:13.3f} | {abs(sim_Z_Umax-ref['Z_Umax'])/ref['Z_Umax']*100:8.2f}% |")
+        print(f"| Max W-vel (Local Pe_z)     | {sim_W_max:13.3f} | {ref['W_max']:13.3f} | {abs(sim_W_max-ref['W_max'])/ref['W_max']*100:8.2f}% |")
+        print(f"| X location of Max W-vel    | {sim_X_Wmax:13.3f} | {ref['X_Wmax']:13.3f} | {abs(sim_X_Wmax-ref['X_Wmax'])/ref['X_Wmax']*100:8.2f}% |")
+        print(f"|----------------------------|---------------|---------------|-----------|")
+        print(f"| Avg Nu (Overall)           | {sim_Nu_avg:13.3f} | {ref['Nu_avg']:13.3f} | {abs(sim_Nu_avg-ref['Nu_avg'])/ref['Nu_avg']*100:8.2f}% |")
+        print(f"| Avg Nu (Mid-plane X=0.5)   | {sim_Nu_half:13.3f} | {ref['Nu_1/2']:13.3f} | {abs(sim_Nu_half-ref['Nu_1/2'])/ref['Nu_1/2']*100:8.2f}% |")
+        print(f"| Avg Nu (Boundary X=0)      | {sim_Nu_0:13.3f} | {ref['Nu_0']:13.3f} | {abs(sim_Nu_0-ref['Nu_0'])/ref['Nu_0']*100:8.2f}% |")
+        print(f"| Max Nu (Boundary X=0)      | {sim_Nu_max:13.3f} | {ref['Nu_max']:13.3f} | {abs(sim_Nu_max-ref['Nu_max'])/ref['Nu_max']*100:8.2f}% |")
+        print(f"| Z location of Max Nu       | {sim_Z_Numax:13.3f} | {ref['Z_Numax']:13.3f} | {abs(sim_Z_Numax-ref['Z_Numax'])/ref['Z_Numax']*100:8.2f}% |")
+        print(f"| Min Nu (Boundary X=0)      | {sim_Nu_min:13.3f} | {ref['Nu_min']:13.3f} | {abs(sim_Nu_min-ref['Nu_min'])/ref['Nu_min']*100:8.2f}% |")
+        print(f"| Z location of Min Nu       | {sim_Z_Numin:13.3f} | {ref['Z_Numin']:13.3f} | {abs(sim_Z_Numin-ref['Z_Numin'])/ref['Z_Numin']*100:8.2f}% |")
     
     # プロファイル可視化
     plt.figure(figsize=(15, 5))
@@ -199,9 +215,9 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
             "Pr": {"min": 0.707, "max": 0.713},
         },
         "targets": {
-            # "Ra": {"value": target_Ra, "weight": 1.0},
-            'alpha_f': {"value": 2.2274814744444102e-04, "weight": 1},
-            # "Pr": {"value": 0.71, "weight": 1.0},
+            "Ra": {"value": target_Ra, "weight": 1.0},
+            # 'alpha_f': {"value": 2.2274814744444102e-04, "weight": 1},
+            "Pr": {"value": 0.707, "weight": 1.0},
             # "tau_f マージン": {"value": 0., "weight": 1.0},
         },
         "target_regularization": 1.0,
@@ -292,6 +308,11 @@ def run_thermal_cavity_benchmark(target_Ra=1e5):
         particles={"particles_inject_per_step": 0},
     )
     run_simulation(cfg)
+
+    # SimConfig は検証時に paths_out をコピーするため、main が書き込むのは cfg.paths_out 側だけ。
+    # 呼び出し元の dict は空のまま残るので、ここで同期してから参照する。
+    if isinstance(cfg.paths_out, dict):
+        paths_out.update(cfg.paths_out)
 
     out_dir = paths_out.get("out_dir")
     npz_path = paths_out.get("npz_path")

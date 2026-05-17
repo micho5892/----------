@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 import numpy as np
 from pprint import pprint, pformat
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from config import SimConfig
 from lbm_logger import configure_logging, get_logger
@@ -34,6 +34,23 @@ try:
 except Exception:
     # sim の実行自体を止めない（optimizer 側の依存が無い場合があるため）
     run_optimize = None
+
+
+def _sim_config_snapshot_for_meta(cfg: SimConfig) -> Dict[str, Any]:
+    """SimConfig を JSON 化可能な辞書にし、同条件で `SimConfig(**d)` → `run_simulation` できるようにする。
+
+    実行時のみ有効なフィールドや、再実行で出力先が前回の絶対パスに固定されるものは省く・無効化する。
+    """
+    data = cfg.model_dump(
+        mode="json",
+        exclude={"paths_out", "custom_physics_models"},
+    )
+    data["out_dir"] = None
+    data["vti_dir"] = None
+    render = data.get("render")
+    if isinstance(render, dict):
+        render["filename"] = "output.gif"
+    return data
 
 
 def format_eta(seconds):
@@ -550,13 +567,17 @@ def run_simulation(cfg: Optional[SimConfig] = None, **kwargs: Any) -> bool:
     logger.info("Saving final steady-state fields and properties...")
     
     metadata = {
+        "meta_schema_version": 1,
         "benchmark": benchmark,
         "nx": cfg.nx, "ny": cfg.ny, "nz": cfg.nz,
         "dx": cfg.dx, "dt": cfg.dt,
         "Lx_p": cfg.Lx_p, "U_inlet_p": cfg.U_inlet_p,
-        "domain_properties": cfg.domain_properties, 
+        "domain_properties": cfg.domain_properties,
         "final_time_p": current_time_p,
-        "final_step": step
+        "final_step": step,
+        # 下記を SimConfig.model_validate で読み戻し run_simulation に渡すと同一条件で再実行可能
+        # （custom_physics_models は非 JSON 型の可能性があるため含めない）
+        "sim_config": _sim_config_snapshot_for_meta(cfg),
     }
     meta_path = os.path.join(out_dir, f"{benchmark}_{timestamp}_meta.json")
     with open(meta_path, 'w', encoding='utf-8') as f:

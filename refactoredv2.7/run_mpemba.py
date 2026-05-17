@@ -215,7 +215,7 @@ def run_case(case_name, init_temp, target_Ra=1e6):
     
     # 熱拡散のみの場合の緩和時間 t_c を基準に、対流による冷却が完了する時間を設定
     t_c = (L_eff**2) / alpha_w
-    max_time_p = t_c * 0.8 
+    max_time_p = t_c * 0.1
     # max_time_p = 10.0 # デバッグ用に10秒に固定
     print(f"[{case_name}] Running up to {max_time_p:.3f} s")
     
@@ -249,6 +249,7 @@ def run_case(case_name, init_temp, target_Ra=1e6):
         U_inlet_p=state["U"],
         u_lbm_inlet=float(state["u_lbm"]),
         visualization_mode="none",
+
         max_time_p=max_time_p,
         ramp_time_p=0.0,
         sponge_thickness=0.0,
@@ -284,6 +285,7 @@ if __name__ == "__main__":
     # Case 2: 高温の水 (初期温度 1.0)
     t_hot, T_hot = run_case("Hot_Water", init_temp=1.0, target_Ra=1e6)
     
+    # exit()
     if t_warm is not None and t_hot is not None:
         plt.figure(figsize=(10, 6))
         
